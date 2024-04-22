@@ -1,4 +1,4 @@
-from module import Tree
+from module import Tree, URL
 
 class URLTree(Tree):
   def putURL(self, sURL):
