@@ -1,13 +1,13 @@
 import multiprocessing
 
 class ProcessMgr(object):
-  def __init__ (self, maxVal=0):
+  def __init__ (self, maxProcess=0):
     self.children = dict()
-    self.psNum = [ False ] * maxVal
-    self.maxVal = maxVal
+    self.psNum = [ False ] * maxProcess
+    self.maxProcess = maxProcess
 
   def addProcess(self, target, args):
-    if len(self.children) == self.maxVal:
+    if len(self.children) == self.maxProcess:
       return None
 
     id = self.getUnusedNum()
@@ -39,11 +39,13 @@ class ProcessMgr(object):
     
     return tmp.exitcode
   
-  def delProcess(self, process):
+  def delProcess(self, id):
     try:
-      del(self.children[process])
+      del(self.children[id])
     except KeyError:
       pass
+    else:
+      self.psNum[id] = False
   
   def setUnusedNum(self, id):
     self.psNum[id] = False
