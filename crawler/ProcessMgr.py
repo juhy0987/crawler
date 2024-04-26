@@ -3,6 +3,7 @@ import multiprocessing
 class ProcessMgr(object):
   def __init__ (self, maxProcess=0):
     self.children = dict()
+    self.pipes = dict()
     self.psNum = [ False ] * maxProcess
     self.maxProcess = maxProcess
 
@@ -13,13 +14,16 @@ class ProcessMgr(object):
     id = self.getUnusedNum()
     if id < 0:
       return None
-    args = (id, ) + args
+    
+    parentConn, childConn = multiprocessing.Pipe()
+    args = (id, childConn) + args
     newProcess = multiprocessing.Process(name=str(id), target=target, args=args, daemon=True)
     
     if not newProcess:
       return None
 
     self.children[id] = newProcess
+    self.pipes[id] = parentConn
     newProcess.start()
     return id
 
@@ -29,19 +33,26 @@ class ProcessMgr(object):
     except KeyError:
       return None
   
+  def getPipe(self, id):
+    try:
+      return self.pipes[id]
+    except KeyError:
+      return None
+  
   def isProcessAlive(self, id):
     try:
       tmp = self.children[id]
     except KeyError:
-      return 1
+      return False
     else:
       pass
     
-    return tmp.exitcode
+    return tmp.is_alive()
   
   def delProcess(self, id):
     try:
       del(self.children[id])
+      del(self.pipes[id])
     except KeyError:
       pass
     else:
@@ -56,3 +67,6 @@ class ProcessMgr(object):
       self.psNum[tmp] = True
       return tmp
     return -1
+
+  def setMaxProcess(self, num):
+    self.maxProcess = num
