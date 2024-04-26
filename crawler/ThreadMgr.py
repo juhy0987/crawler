@@ -16,7 +16,7 @@ def thread(id, config, managers, urlQ, writerQ):
   localData = threading.local()
   
   localData.crawler = SearchDriver()
-  localData.wait = WebDriverWait(localData.crawler, timeout=10)
+  localData.wait = WebDriverWait(localData.crawler, timeout=5)
   while not urlQ.empty():
     sys.stderr = config.applyLog(sys.stderr)
     tmpData = threading.local()
@@ -29,7 +29,6 @@ def thread(id, config, managers, urlQ, writerQ):
     
     try:
       localData.crawler.get(tmpData.url)
-      localData.crawler.implicitly_wait(3)
     except selenium.common.exceptions.WebDriverException as e:
       if "net::ERR_CONNECTION_TIMED_OUT" in e.msg:
         print("[Crawler Load] TIMED OUT: {}".format(tmpData.url), file=sys.stderr)
@@ -51,8 +50,9 @@ def thread(id, config, managers, urlQ, writerQ):
       print("[Crawler Load] Unhandled Error: {}'\n: {}".format(e.msg, tmpData.url), file=sys.stderr)
       raise e
     
+    
     ############### Weights Calculation ################
-    # if config.CheckZeroDepth and tmpData.depth == 0:
+    # if tmpData.depth > 0 or config.CheckZeroDepth:
             
     ####################################################
     writerQ.put(tmpData.url)
@@ -63,24 +63,31 @@ def thread(id, config, managers, urlQ, writerQ):
       except selenium.common.exceptions.TimeoutException:
         print("[Crawler Load] Link TIMED OUT: {}".format(tmpData.url), file=sys.stderr)
         continue
-      tag_a = localData.crawler.find_elements(By.TAG_NAME, "a")
-      for tag in tag_a:
+      tmpData.tag_a = localData.crawler.find_elements(By.TAG_NAME, "a")
+      for tag in tmpData.tag_a:
         # link = tag.get_attribute('href')
         try:
-          link = localData.wait.until(EC.visibility_of(tag)).get_attribute('href')
+          tmpData.link = localData.wait.until(EC.visibility_of(tag)).get_attribute('href')
         except selenium.common.exceptions.TimeoutException:
           print("[Crawler Load] href TIMED OUT: {}".format(tmpData.url), file=sys.stderr)
           continue
-
-        if link:
-          if len(link) > 1 and link[-1] == '/':
-            link = link[:-1]
+        except selenium.common.exceptions.StaleElementReferenceException:
+          print("[Crawler Load] href TIMED OUT: {}".format(tmpData.url), file=sys.stderr)
+          continue
+        
+        if tmpData.link:
+          tmpData.sharp = tmpData.link.find('#')
+          if tmpData.sharp > -1:
+            tmpData.link = tmpData.link[:tmpData.sharp]
           
-          if len(link) > 10 and link[:10] == "javascript":
+          if len(tmpData.link) > 1 and tmpData.link[-1] == '/':
+            tmpData.link = tmpData.link[:-1]
+          
+          if len(tmpData.link) > 10 and tmpData.link[:10] == "javascript":
             continue
           
-          if not managers[2].lookup(link):
-            urlQ.put((link, tmpData.depth+1))
+          if not managers[2].lookup(tmpData.link):
+            urlQ.put((tmpData.link, tmpData.depth+1))
 
 class ThreadMgr(object):
   def __init__(self, maxThread=0):
