@@ -1,15 +1,95 @@
+import sys, os
+import time
 import threading
 
-from Config import config
+import selenium
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.common.keys import Keys
+from selenium.webdriver.common.by import By
+
+sys.path.append(os.path.dirname(os.path.abspath(os.path.dirname(__file__))))
+from Config import Config
+from modules import SearchDriver
+
+def thread(id, config, managers, urlQ, writerQ):
+  localData = threading.local()
+  
+  localData.crawler = SearchDriver()
+  localData.wait = WebDriverWait(localData.crawler, timeout=10)
+  while not urlQ.empty():
+    sys.stderr = config.applyLog(sys.stderr)
+    tmpData = threading.local()
+    tmpData.url, tmpData.depth = urlQ.get()
+
+    # print("Thread[{}] Running".format(id), file=sys.__stdout__)
+    
+    if managers[2].mutualCheck(tmpData.url):
+      continue
+    
+    try:
+      localData.crawler.get(tmpData.url)
+      localData.crawler.implicitly_wait(3)
+    except selenium.common.exceptions.WebDriverException as e:
+      if "net::ERR_CONNECTION_TIMED_OUT" in e.msg:
+        print("[Crawler Load] TIMED OUT: {}".format(tmpData.url), file=sys.stderr)
+        continue
+      elif "invalid session id" in e.msg:
+        print("[Crawler Load] Invalid session id(Bot Detected): {}".format(tmpData.url), file=sys.stderr)
+        continue
+      else:
+        print("[Crawler Load] Unhandled Error: {}'\n: {}".format(e.msg, tmpData.url), file=sys.stderr)
+        raise e
+    except selenium.common.exceptions.InvalidSessionIdException as e:
+      if "invalid session id" in e.msg:
+        print("[Crawler Load] Invalid session id(Bot Detected): {}".format(tmpData.url), file=sys.stderr)
+        continue
+      else:
+        print("[Crawler Load] Unhandled Error: {}'\n: {}".format(e.msg, tmpData.url), file=sys.stderr)
+        raise e
+    except Exception:
+      print("[Crawler Load] Unhandled Error: {}'\n: {}".format(e.msg, tmpData.url), file=sys.stderr)
+      raise e
+    
+    ############### Weights Calculation ################
+    # if config.CheckZeroDepth and tmpData.depth == 0:
+            
+    ####################################################
+    writerQ.put(tmpData.url)
+    if tmpData.depth < config.MaxDepth:
+      tmpData.links = []
+      try:
+        localData.wait.until(EC.presence_of_all_elements_located((By.TAG_NAME, "a")))
+      except selenium.common.exceptions.TimeoutException:
+        print("[Crawler Load] Link TIMED OUT: {}".format(tmpData.url), file=sys.stderr)
+        continue
+      tag_a = localData.crawler.find_elements(By.TAG_NAME, "a")
+      for tag in tag_a:
+        # link = tag.get_attribute('href')
+        try:
+          link = localData.wait.until(EC.visibility_of(tag)).get_attribute('href')
+        except selenium.common.exceptions.TimeoutException:
+          print("[Crawler Load] href TIMED OUT: {}".format(tmpData.url), file=sys.stderr)
+          continue
+
+        if link:
+          if len(link) > 1 and link[-1] == '/':
+            link = link[:-1]
+          
+          if len(link) > 10 and link[:10] == "javascript":
+            continue
+          
+          if not managers[2].lookup(link):
+            urlQ.put((link, tmpData.depth+1))
 
 class ThreadMgr(object):
-  def __init__(self, maxThreadVal=0):
+  def __init__(self, maxThread=0):
     self.threads = dict()
-    self.psNum = [ False ] * maxThreadVal
-    self.maxThreadVal = maxThreadVal
+    self.psNum = [ False ] * maxThread
+    self.maxThread = maxThread
     
   def addThread(self, target, args):
-    if len(self.threads) == self.maxProcessVal:
+    if len(self.threads) >= self.maxThread:
       return None
 
     id = self.getUnusedNum()
@@ -35,11 +115,11 @@ class ThreadMgr(object):
     try:
       tmp = self.threads[id]
     except KeyError:
-      return 1
+      return False
     else:
       pass
     
-    return tmp.exitcode
+    return tmp.is_alive()
   
   def delThread(self, id):
     try:
@@ -56,3 +136,9 @@ class ThreadMgr(object):
       self.psNum[tmp] = True
       return tmp
     return -1
+
+  def setMaxThread(self, num):
+    self.maxThread = num
+
+if __name__=="__main__":
+  pass
