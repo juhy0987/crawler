@@ -1,4 +1,4 @@
-from module import Tree, URL
+from modules import Tree, URL
 
 class URLTree(Tree):
   def putURL(self, sURL):
@@ -43,7 +43,7 @@ class URLTree(Tree):
     self.lookupAll
 
 if __name__ == "__main__":
-  from module import URL
+  from modules import URL
   ex = "https://www.naver.com/a/b/c/d?kjh=12&jk=6"
   lURL = URL.tokenize(ex)
   tree = URLTree()
