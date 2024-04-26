@@ -35,6 +35,12 @@ def tokenize(sURL):
     
     lURL += uri
   
+  while True:
+    try:
+      lURL.remove("")
+    except ValueError:
+      break
+  
   return lURL
 
 
