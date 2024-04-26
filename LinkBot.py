@@ -64,6 +64,31 @@ def writerProcess(id, chiefConn, configMgr, q):
         cnt = 0
     time.sleep(1)
 
+def runMode1(config):
+  return
+
+def runMode2(config):
+  return
+
+def runMode3(config):
+  startURL = []
+  try:
+    with open(config.URLFilePath, "rt") as f:
+      while True:
+        sBufIn = f.readline()
+        if not sBufIn:
+          break
+        
+        try:
+          url, dummy = sBufIn.split()
+        except ValueError:
+          startURL.append(sBufIn)
+  except (FileNotFoundError, OSError, TypeError):
+    pass
+  return startURL
+
+# ----------------- Emergency Handler ---------------- #
+
 def emergencyQBackup(q, BackupFilePath):
   backupList = []
   while not q.empty():
@@ -90,6 +115,8 @@ def emergencyQWrite(q, URLLogFilePath):
   
   while not q.empty():
     fd.write(q.get() + '\n')
+
+# --------------- Emergency Handler End ---------------- #
 
 if __name__=="__main__":
   # Linkbot Initialize
@@ -147,15 +174,19 @@ if __name__=="__main__":
       case 1:
         pass # FROM DB
       case 3:
-        pass # getFile
+        startURL = runMode3(config)
       case _:
         print("[Linkbot Init] Wrong Mode: {}".format(config.RunMode), file=sys.stderr)
         sys.exit(1)
-  
-    for url in startURL:
-      if url[-1] == '/':
-        url = url[:-1]
-      urlQ.put((url, 0))
+    
+    if startURL:
+      for url in startURL:
+        sharp = url.find('#')
+        if sharp > -1:
+          url = url[:url.find('#')]
+        if url[-1] == '/':
+          url = url[:-1]
+        urlQ.put((url, 0))
     managers[2].clear()
   
   # Process Start
@@ -179,6 +210,10 @@ if __name__=="__main__":
       writer.start()
       print("[Linkbot] Revived writer process", file=sys.stderr)
       config.applyLog(sys.stderr)
+    
+    managers[0].reviveUpdater()
+    # managers[1].reviveUpdater()
+    managers[2].reviveRecoverer()
       
     if managers[0].getUpdateFlag():
       for id, conn in processMgr.pipes.items():
@@ -188,6 +223,7 @@ if __name__=="__main__":
       managers[0].setUpdateFlag(False)
       config = managers[0].getConfig()
       
+      managers[2].changeConfig(config)
       processMgr.setMaxProcess(config.MaxProcess)
     
     if len(processMgr.children) < config.MaxProcess and not urlQ.empty():
