@@ -1,9 +1,11 @@
-import multiprocessing.managers
-import sys, atexit
+import sys, atexit, os
 import time
 import threading
 import multiprocessing
+import multiprocessing.managers
 import copy
+
+ORIGIN_STDERR = sys.__stderr__
 
 class Config(object):
   def __init__ (self):
@@ -13,6 +15,8 @@ class Config(object):
     self.KeywordPath = ""
     self.MsgLogFilePath = ""
     self.MsgLogTmpFilePath = ""
+    self.URLLogFilePath = ""
+    self.BackupFilePath = ""
     self.AvailRate = 0
     
     # Linkbot Work Settings
@@ -59,6 +63,10 @@ class Config(object):
     
     # Start URLs(RunMode 0)
     self.StartURL = []
+    
+    self.curLogFilePath = ""
+    self.pidFlag = False
+    self.updateToken = False
 
   def load(self, sFilePath):
     configFD = open(sFilePath, "rt")
@@ -87,7 +95,7 @@ class Config(object):
             else:
               continue
 
-        print("[Wrong Config Format] error string: {}".format(sBufIn), file=sys.stderr)
+        print("[Config Load] Wrong formated string: {}".format(sBufIn), file=sys.stderr)
         continue
       
       if option in ["StartTime", "EndTime"]:
@@ -95,28 +103,61 @@ class Config(object):
       
       try:
         curValue = self.__dict__[option]
-        if type(curValue) == int:
-          value = int(value)
-        elif type(curValue) == float:  
-          value = float(value)
-        elif type(curValue) == bool:
-          if value == "0" or value == "False":
-            value = False
-          else:
-            value = True
-        elif type(curValue) == list:
-          if not value in curValue:
-            curValue.append(value)
-          continue
-        
-        if curValue != value:
-          self.__dict__[option] = value
-          print("[Config changed] {}: {} > {}".format(option, curValue, value), file=sys.stderr)
       except KeyError:
-        print("[Wrong Config Format] There's no option [{}]".format(option), file=sys.stderr)
+        print("[Config Load] There's no option [{}]".format(option), file=sys.stderr)
         continue
+      else:
+        pass
+      
+      if type(curValue) == int:
+        value = int(value)
+      elif type(curValue) == float:  
+        value = float(value)
+      elif type(curValue) == bool:
+        if value == "0" or value == "False":
+          value = False
+        else:
+          value = True
+      elif type(curValue) == list:
+        if not value in curValue:
+          curValue.append(value)
+        continue
+      
+      if curValue != value:
+        if option == "LogFilePath":
+          if sys.stderr != sys.__stderr__:
+            sys.stderr.close()
+          
+          if value == "":
+            sys.stderr = sys.__stderr__
+            self.curLogFilePath = ""
+          else:
+            sys.stderr = open(value, "at")
+            self.curLogFilePath = value
+        elif option == "PIDFilePath":
+          if self.pidFlag:
+            continue
+          
+          if os.path.isfile(value):
+            print("[Config Load] Process is working", file=sys.__stderr__)
+            sys.exit(1)
+
+          try:
+            fd = open(value, "w")
+          except (FileNotFoundError,TypeError,OSError):
+            print("[Config Load] PID Path is wrong: {}".format(value), file=sys.__stderr__)
+            sys.exit(1)
+          
+          fd.write(str(os.getpid())+'\n')
+          fd.close()
+          
+          self.pidFlag = True
+        
+        self.__dict__[option] = value
+        print("[Config changed] {}: {} > {}".format(option, curValue, value), file=sys.stderr)
     
     print("[Config Load] Load Process Completed", file=sys.stderr)
+    sys.stderr = self.applyLog(sys.stderr)
 
   def dump(self, sConfigDumpPath):
     fd = open(sConfigDumpPath, "wt")
@@ -125,6 +166,16 @@ class Config(object):
     for k, v in self.__dict__.items():
       fd.write("{} {}\n".format(k, v))
     fd.close()
+    try:
+      os.remove(self.PIDFilePath)
+    except FileNotFoundError:
+      pass
+  
+  def applyLog(self, fd):
+    if fd != sys.__stderr__:
+      fd.close()
+      fd = open(self.curLogFilePath, "at")
+    return fd
 
 class ConfigMgr(multiprocessing.managers.Namespace):
   def __init__(self, sFilePath):
@@ -133,7 +184,7 @@ class ConfigMgr(multiprocessing.managers.Namespace):
     self.sFilePath = sFilePath
     try:
       self.config.load(sFilePath)
-    except FileNotFoundError|TypeError|OSError:
+    except (FileNotFoundError,TypeError,OSError):
       print("[Config Init] There's no Config File [{}]".format(sFilePath), file=sys.stderr)
       sys.exit(1)
     
@@ -141,30 +192,41 @@ class ConfigMgr(multiprocessing.managers.Namespace):
     self.lock = multiprocessing.RLock()
     
     self.updaterKillFlag = False
-    self.updater = threading.Thread(target=self.update, daemon=True)
+    self.updater = threading.Thread(target=self.autoUpdate, daemon=True)
     self.updater.start()
+    
+    self.updateFlag = False
     
     atexit.register(self.dump, "./tmp.txt")
   
   def getConfig(self):
-    if self.lock.acquire(block=False, timeout=3.0):
+    if self.lock.acquire(block=True, timeout=3.0):
       tmp = copy.deepcopy(self.config)
       self.lock.release()
       return tmp
   
-  def update(self):
+  def autoUpdate(self):
     while True:
       time.sleep(self.config.ConfigLoadPeriod)
       if self.updaterKillFlag:
         break
-      try:
-        self.lock.acquire(block=True)
-        self.config.load(self.sFilePath)
+      
+      if self.lock.acquire(block=True, timeout=10):
+        try:
+          self.config.load(self.sFilePath)
+        except (FileNotFoundError,TypeError,OSError):
+          print("[Config Update] There's no Config File [{}]".format(self.sFilePath), file=sys.stderr)
+          sys.stderr = self.applyLog(sys.stderr)
+        except Exception as e:
+          print(str(e), file=sys.stderr)
+          sys.stderr = self.applyLog(sys.stderr)
         self.lock.release()
-      except FileNotFoundError|TypeError|OSError:
-        print("[Config Update] There's no Config File [{}]".format(self.sFilePath), file=sys.stderr)
-      except Exception as e:
-        print(str(e), file=sys.stderr)
+        
+        self.updateFlag = True
+  
+  def manualUpdate(self):
+    pass
+  
   
   def dump(self, sConfigDumpPath):
     self.updaterKillFlag = True
@@ -172,6 +234,12 @@ class ConfigMgr(multiprocessing.managers.Namespace):
     
   def changePath(self, sFilePath):
     self.sFilePath = sFilePath
+  
+  def getUpdateFlag(self):
+    return self.updateFlag
+
+  def setUpdateFlag(self, value):
+    self.updateFlag = value
 
 if __name__=="__main__":
   configMgr = ConfigMgr("./config/linkbot.conf")
