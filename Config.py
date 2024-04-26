@@ -205,6 +205,11 @@ class ConfigMgr(multiprocessing.managers.Namespace):
       self.lock.release()
       return tmp
   
+  def reviveUpdater(self):
+    if not self.updater.is_alive():
+      self.updater = threading.Thread(target=self.recovery, daemon=True)
+      self.updater.start()
+  
   def autoUpdate(self):
     while True:
       time.sleep(self.config.ConfigLoadPeriod)
