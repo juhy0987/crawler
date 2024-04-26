@@ -85,6 +85,12 @@ class DuplicationDB(object):
       
       if self.isRedisWork and insertedTime:
         self.insert(sURL, insertedTime)
+    else:
+      try:
+        self.lru.remove(sURL)
+      except ValueError:
+        pass
+      self.lru.insert(0, sURL)
     
     return insertedTime
   
@@ -159,6 +165,11 @@ class DuplicationDBMgr(multiprocessing.managers.Namespace):
       self.lock.release()
       return insertedTime
 
+  def reviveRecoverer(self):
+    if not self.recoverer.is_alive():
+      self.recoverer = threading.Thread(target=self.recovery, daemon=True)
+      self.recoverer.start()
+  
   def recovery(self):
     while True:
       time.sleep(self.db.DBRecoveryPeriod)
@@ -190,6 +201,9 @@ class DuplicationDBMgr(multiprocessing.managers.Namespace):
   
   def clear(self):
     self.db.clear()
+  
+  def changeConfig(self, config):
+    self.db.config = config
   
   def changePath(self, sFilePath):
     self.sFilePath = sFilePath
