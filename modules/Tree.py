@@ -40,15 +40,17 @@ class Tree(Node):
     if not tokenList:
       return 0
     
-    curNode = self.children
+    curNode = self
     for token in tokenList:
       curNode = curNode.lookup(token)
       
       if not curNode:
         return 0
-      curNode = curNode.children
     
-    return 1
+    if not len(curNode.children):
+      return 1
+    else:
+      return 0
 
   def print(self):
     print("####################### Tree Dump ##########################")
