@@ -1,15 +1,16 @@
 import sys, os
 import time
+import subprocess
 import multiprocessing
 import multiprocessing.managers
 import atexit
 import pickle
 
-import crawler
+import lib
 from Config import Config, ConfigMgr
 from DuplicationDBMgr import DuplicationDB, DuplicationDBMgr
 
-CONFIGPATH = "C:\\Users\\plantynet\\Desktop\\juhy0987\\crawler\\config\\linkbot.conf"
+CONFIGPATH = "./config/linkbot.conf"
 DUPLICATIONDB_CONFIGPATH = "./config/redisdb.conf"
 
 class MyManager(multiprocessing.managers.BaseManager):
@@ -17,7 +18,8 @@ class MyManager(multiprocessing.managers.BaseManager):
 
 MyManager.register("ConfigMgr", ConfigMgr)
 MyManager.register("DuplicationDBMgr", DuplicationDBMgr)
-MyManager.register("PipeMgr", crawler.PipeMgr)
+MyManager.register("PipeMgr", lib.PipeMgr)
+MyManager.register("CrawlerPIDMgr", lib.CrawlerPIDMgr)
 
 def initConfig(manager):
   configMgr = manager.ConfigMgr(CONFIGPATH)
@@ -89,6 +91,21 @@ def runMode3(config):
 
 # ----------------- Emergency Handler ---------------- #
 
+def emergencyProcessKill(crawlerPIDMgr):
+  time.sleep(5)
+  pidDict = crawlerPIDMgr.getPid()
+  for key, pid in pidDict.items():
+    p = subprocess.Popen(["taskkill", "/pid", str(pid), "/t", "/f"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    output, err = p.communicate()
+    # print(output.decode("cp949"))
+    # print(err.decode('cp949'))
+    
+  # p = subprocess.Popen(["taskkill", "/t", "/f", "/im", "chrome.exe"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+  # output, err = p.communicate()
+  
+  # p = subprocess.Popen(["taskkill", "/t", "/f", "/im", "chromemanager.exe"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+  # output, err = p.communicate()
+
 def emergencyQBackup(q, BackupFilePath):
   backupList = []
   while not q.empty():
@@ -109,7 +126,7 @@ def emergencyQBackup(q, BackupFilePath):
 
 def emergencyQWrite(q, URLLogFilePath):
   try:
-    fd = open(config.URLLogFilePath)
+    fd = open(config.URLLogFilePath, "at")
   except (FileNotFoundError, TypeError, OSError):
     sys.exit(1)
   
@@ -136,6 +153,10 @@ if __name__=="__main__":
   # Duplication DB Initialize
   managers.append(initDuplicationDB(manager, config)) # [2]: Duplicate
   
+  # Process Killer Initalize
+  managers.append(manager.CrawlerPIDMgr())
+  atexit.register(emergencyProcessKill, managers[3])
+  
   # Writer Initialize
   writerQ = multiprocessing.Queue()
   toWriterConn, writerConn = multiprocessing.Pipe()
@@ -147,7 +168,7 @@ if __name__=="__main__":
   
   # Process Manager Initialize
   urlQ = multiprocessing.Queue()
-  processMgr = crawler.ProcessMgr(config.MaxProcess)
+  processMgr = lib.ProcessMgr(config.MaxProcess)
   
   atexit.register(emergencyQBackup, urlQ, config.BackupFilePath)
   atexit.register(emergencyQWrite, writerQ, config.URLLogFilePath)
@@ -227,7 +248,7 @@ if __name__=="__main__":
       processMgr.setMaxProcess(config.MaxProcess)
     
     if len(processMgr.children) < config.MaxProcess and not urlQ.empty():
-      processMgr.addProcess(crawler.process, (managers, urlQ, writerQ))
+      processMgr.addProcess(lib.process, (managers, urlQ, writerQ))
       
     if not len(processMgr.children):
       cnt += 1
