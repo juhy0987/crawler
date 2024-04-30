@@ -53,7 +53,7 @@ chromeDriver = None
 def initialize():
   global initialized, chromeDriver
   if not initialized:
-    chromeDriver = ChromeDriverManager().install()
+    # chromeDriver = ChromeDriverManager().install()
     initialized = True
 
 if __name__ == "__main__":
