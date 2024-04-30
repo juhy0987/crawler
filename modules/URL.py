@@ -43,6 +43,48 @@ def tokenize(sURL):
   
   return lURL
 
+def regexTokenize(sURLRegex):
+  if not sURLRegex:
+    return []
+  
+  if len(sURLRegex) > 7 and sURLRegex[:4].lower() == 'http':
+    sURLRegex = sURLRegex[6:]
+    while sURLRegex[0] in ':/':
+      sURLRegex = sURLRegex[1:]
+  
+  if sURLRegex[-1] == '/':
+    sURLRegex = sURLRegex[:-1]
+  
+  if '#' in sURLRegex:
+    sURLRegex = sURLRegex.split('#')[0]
+  
+  if not sURLRegex:
+    return []
+  
+  lTmpToken = re.split('\/', sURLRegex)
+  domain = re.split('\.', lTmpToken[0])
+  domain.reverse()
+  lURL = domain
+  
+  if len(lTmpToken) > 1:
+    uri = ['\^']+ lTmpToken[1:-1]
+    qry = lTmpToken[-1].split('?')
+  
+    if len(qry) > 1:
+      uri += qry[0]
+      qry = ['~'] + re.split('([&|=])', qry[1])
+
+    uri += qry
+    
+    lURL += uri
+  
+  while True:
+    try:
+      lURL.remove("")
+    except ValueError:
+      break
+  
+  return lURL
 
 if __name__ == "__main__":
   ex = "https://www.naver.com/a/b/c/d?kjh=12&jk=6"
