@@ -32,6 +32,7 @@ class DuplicationDB(object):
     while True:
       sBufIn = duplicateDBFD.readline()
       if not sBufIn:
+        duplicateDBFD.close()
         break
       elif sBufIn[0] == '#' or sBufIn[0] == '\n':
         continue
@@ -203,7 +204,8 @@ class DuplicationDBMgr(multiprocessing.managers.Namespace):
     self.db.clear()
   
   def changeConfig(self, config):
-    self.db.config = config
+    if config:
+      self.db.config = config
   
   def changePath(self, sFilePath):
     self.sFilePath = sFilePath
