@@ -31,7 +31,7 @@ class JudgementTree(object):
     self.config = None
   
   def init(self):
-    self.queryDict = oracQry.selectDict
+    self.queryDict = oracQry.treeDict
     self.treeDict.clear()
   
   def load(self, sFilePath):
@@ -76,7 +76,7 @@ class JudgementTree(object):
   
   def lookup(self, sURL):
     for key in self.treeDict.keys():
-      if self.treeDict[key].lookupURL(sURL):
+      if not self.treeDict[key].lookupURL(sURL):
         return 0
     return -1
   
@@ -89,7 +89,7 @@ class JudgementTree(object):
         print("[Judgement Update] Tree [{}] Updated".format(key), file=sys.stderr)
         cnt += 1
     
-    print("[Judgement Update] Tree Update Completed, Success: {}, Failed: {}".format(cnt, len(self.treeDict)-cnt), file=sys.stderr)
+    print("[Judgement Update] Tree Update Completed, Success: {}, Failed: {}".format(cnt, len(self.queryDict)-cnt), file=sys.stderr)
     sys.stderr = self.config.applyLog(sys.stderr)
   
   def update(self, key):
