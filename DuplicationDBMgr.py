@@ -123,6 +123,28 @@ class DuplicationDB(object):
       
       return 1
     return None
+  
+  def delete(self, sURL):
+    if not sURL:
+      return -1
+    
+    try:
+      del(self.db[sURL])
+    except KeyError:
+      pass
+    
+    try:
+      self.lru.remove(sURL)
+    except ValueError:
+      pass
+    
+    try:
+      self.redisDB.delete(sURL)
+    except redis.exceptions.ConnectionError:
+      self.isRedisWork = False
+      
+    return 0
+  
   def clear(self):
     if self.redisDB.flushdb():
       print("[Duplication Clear] DB cleared", file=sys.stderr)
@@ -190,6 +212,9 @@ class DuplicationDBMgr(multiprocessing.managers.Namespace):
         self.lock.release()
         
       sys.stderr = self.db.config.applyLog(sys.stderr)
+  
+  def delete(self, sURL):
+    return self.db.delete(sURL)
   
   def storeDBbeforeExit(self):
     self.recoveryKillFlag = True

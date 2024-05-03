@@ -42,15 +42,17 @@ class Config(object):
     self.MaxProcess = 1      # Max num of child process
     self.MaxThread = 1       # Max num of threads in child process
 
-    self.URLDelay = dict()
+    self.DefaultSemaphore = 10
+    self.URLSemaphore = dict()
 
     # RunMode 1
     self.DaysAgo = 0         # Filter urls by time
     self.GetURLCount = 0       # Max num of URL from DB(0: ALL)
     
-    # Google Keyword Search(RunMode 2)
+    # Keyword Search(RunMode 2)
     self.GoogleKeyGID = 0
     self.GooglePref = ""
+    self.NaverPref =""
     
     # RunMode 3
     self.URLFilePath = ""
@@ -69,7 +71,7 @@ class Config(object):
     self.updateToken = False
 
   def load(self, sFilePath):
-    configFD = open(sFilePath, "rt")
+    configFD = open(sFilePath, "rt", encoding='utf-8')
     print("[Config Load] File Path: {}".format(sFilePath), file=sys.stderr)
     
     while True:
@@ -87,7 +89,7 @@ class Config(object):
         except ValueError:
           pass
         else:
-          if option == "URLDelay":
+          if option == "URLSemaphore":
             try:
               self.__dict__[option][value] = int(dummy)  
             except ValueError:
@@ -174,6 +176,7 @@ class Config(object):
   def applyLog(self, fd):
     if fd != sys.__stderr__:
       fd.close()
+    if len(self.curLogFilePath) != 0:
       fd = open(self.curLogFilePath, "at")
     return fd
 

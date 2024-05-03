@@ -8,17 +8,21 @@ import pickle
 
 import lib
 from Config import Config, ConfigMgr
+from JudgementTreeMgr import JudgementTree, JudgementTreeMgr
 from DuplicationDBMgr import DuplicationDB, DuplicationDBMgr
+from HostSemephoreMgr import HostSemaphoreMgr
 
 CONFIGPATH = "./config/linkbot.conf"
+ORACLEDB_CONFIGPATH = "./config/oracdb.conf"
 DUPLICATIONDB_CONFIGPATH = "./config/redisdb.conf"
 
 class MyManager(multiprocessing.managers.BaseManager):
   pass
 
 MyManager.register("ConfigMgr", ConfigMgr)
+MyManager.register("JudgementTreeMgr", JudgementTreeMgr)
 MyManager.register("DuplicationDBMgr", DuplicationDBMgr)
-MyManager.register("PipeMgr", lib.PipeMgr)
+MyManager.register("HostSemaphoreMgr", HostSemaphoreMgr)
 MyManager.register("CrawlerPIDMgr", lib.CrawlerPIDMgr)
 
 def initConfig(manager):
@@ -26,12 +30,17 @@ def initConfig(manager):
   return configMgr
 
 def initJudgementTree(manager, config):
-  # judgementTreeMgr
+  # judgementTreeMgr = manager.JudgementTreeMgr(ORACLEDB_CONFIGPATH, config)
+  # return judgementTreeMgr
   return None
 
 def initDuplicationDB(manager, config):
   duplicationDBMgr = manager.DuplicationDBMgr(DUPLICATIONDB_CONFIGPATH, config)
   return duplicationDBMgr
+
+def initHostSemephore(manager, config):
+  hostSemaphoreMgr = manager.HostSemaphoreMgr(config)
+  return hostSemaphoreMgr
 
 def writerProcess(id, chiefConn, configMgr, q):
   config = configMgr.getConfig()
@@ -95,16 +104,25 @@ def emergencyProcessKill(crawlerPIDMgr):
   time.sleep(5)
   pidDict = crawlerPIDMgr.getPid()
   for key, pid in pidDict.items():
-    p = subprocess.Popen(["taskkill", "/pid", str(pid), "/t", "/f"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    if sys.platform == 'win32':
+      p = subprocess.Popen(["taskkill", "/pid", str(pid), "/t", "/f"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    elif sys.platform == 'linux':
+      p = subprocess.Popen(["pkill", "-9", "-P", str(pid)], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    else:
+      continue
     output, err = p.communicate()
     # print(output.decode("cp949"))
     # print(err.decode('cp949'))
-    
+  
+  if sys.platform == 'win32':
+    p = subprocess.Popen(["taskkill", "/t", "/f", "/im", "chromedriver.exe"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+  elif sys.platform == 'linux':
+    p = subprocess.Popen(["killall", "-9", "chromedriver"])
+  output, err = p.communicate()
   # p = subprocess.Popen(["taskkill", "/t", "/f", "/im", "chrome.exe"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
   # output, err = p.communicate()
   
-  # p = subprocess.Popen(["taskkill", "/t", "/f", "/im", "chromemanager.exe"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-  # output, err = p.communicate()
+  
 
 def emergencyQBackup(q, BackupFilePath):
   backupList = []
@@ -136,26 +154,29 @@ def emergencyQWrite(q, URLLogFilePath):
 # --------------- Emergency Handler End ---------------- #
 
 if __name__=="__main__":
-  # Linkbot Initialize
+  # Linkbot Initiate
   print("Linkbot Start")
-  # Shared Memory Manager Initialize
+  # Shared Memory Manager Initiate
   manager = MyManager()
   manager.start()
   managers = []
   
-  # Settings Initialize
+  # Settings Initiate
   managers.append(initConfig(manager)) # [0]: config
   config = managers[0].getConfig()
   sys.stderr = open(config.LogFilePath, "at")
-  # Judge DB Initialize
+  # Judge DB Initiate
   managers.append(initJudgementTree(manager, config)) # [1]: Tree
   
-  # Duplication DB Initialize
+  # Duplication DB Initiate
   managers.append(initDuplicationDB(manager, config)) # [2]: Duplicate
   
-  # Process Killer Initalize
+  # Process Killer Initiate
   managers.append(manager.CrawlerPIDMgr())
   atexit.register(emergencyProcessKill, managers[3])
+  
+  # Semephore Initiate
+  managers.append(initHostSemephore(manager, config))
   
   # Writer Initialize
   writerQ = multiprocessing.Queue()
@@ -166,7 +187,7 @@ if __name__=="__main__":
                                    daemon=True)
   writer.start()
   
-  # Process Manager Initialize
+  # Process Manager Initiate
   urlQ = multiprocessing.Queue()
   processMgr = lib.ProcessMgr(config.MaxProcess)
   
