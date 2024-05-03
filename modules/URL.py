@@ -41,6 +41,9 @@ def tokenize(sURL):
     except ValueError:
       break
   
+  if lURL[-1] == '^' or lURL[-1] == '~':
+    lURL = lURL[:-1]
+  
   return lURL
 
 def regexTokenize(sURLRegex):
@@ -84,10 +87,58 @@ def regexTokenize(sURLRegex):
     except ValueError:
       break
   
+  if lURL[-1] == '\^' or lURL[-1] == '~':
+    lURL = lURL[:-1]
+  
   return lURL
+
+def getProtocolHost(sURL):
+  if not sURL:
+    return ""
+  
+  protocol = ""
+  if len(sURL) > 7 and sURL[:4].lower() == 'http':
+    protocol = sURL[:6]
+    sURL = sURL[6:]
+    while sURL[0] in ':/':
+      protocol = protocol + sURL[0]
+      sURL = sURL[1:]
+  
+  if sURL[-1] == '/':
+    sURL = sURL[:-1]
+  
+  if '#' in sURL:
+    sURL = sURL.split('#')[0]
+  
+  if not sURL:
+    return ""
+  
+  lTmpToken = sURL.split('/', 1)[0]
+  return protocol + lTmpToken
+
+def getHost(sURL):
+  if not sURL:
+    return ""
+  
+  if len(sURL) > 7 and sURL[:4].lower() == 'http':
+    sURL = sURL[6:]
+    while sURL[0] in ':/':
+      sURL = sURL[1:]
+  
+  if sURL[-1] == '/':
+    sURL = sURL[:-1]
+  
+  if '#' in sURL:
+    sURL = sURL.split('#')[0]
+  
+  if not sURL:
+    return ""
+  
+  lTmpToken = sURL.split('/', 1)[0]
+  return lTmpToken
 
 if __name__ == "__main__":
   ex = "https://www.naver.com/a/b/c/d?kjh=12&jk=6"
-  l = tokenize(ex)
+  l = getHost(ex)
   print(l)
   

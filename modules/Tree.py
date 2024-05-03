@@ -38,19 +38,19 @@ class Tree(Node):
         
   def lookupAll(self, tokenList):
     if not tokenList:
-      return 0
+      return -1
     
     curNode = self
     for token in tokenList:
       curNode = curNode.lookup(token)
       
       if not curNode:
-        return 0
+        return -1
     
     if not len(curNode.children):
-      return 1
-    else:
       return 0
+    else:
+      return -1
 
   def print(self):
     print("####################### Tree Dump ##########################")

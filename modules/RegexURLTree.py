@@ -13,7 +13,6 @@ class RegexTree(URLTree):
       if re.match(key, token):
         return self.children[key]
     
-    
     try:
       curNode = self.children[token]
     except KeyError:
