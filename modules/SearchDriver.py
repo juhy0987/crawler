@@ -85,12 +85,10 @@ if __name__ == "__main__":
       print(str(e), file=sys.stderr)
       sys.exit(1)
   
-  # print(crawler.page_source)
+  
   # lLink = crawler.find_elements(By.TAG_NAME, "a")
-  # print(lLink)
-  # for link in lLink:
-  #   print(link.get_attribute('href'))
-  # print(crawler.page_source)
-  # crawler.implicitly_wait(3)
-  # crawler.get_screenshot_as_file('capture_naver.png')
+  soup = BeautifulSoup(crawler.page_source, "html.parser")
+  lLink = soup.select('a')
+  for link in lLink:
+    print(link['href'])
   crawler.close()
