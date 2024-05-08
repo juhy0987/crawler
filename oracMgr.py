@@ -24,7 +24,6 @@ def main():
     
     config[option] = value
   config["Port"] = int(config["Port"])
-  print("!!!!!!!!!!", file=sys.stderr)
   qry = sys.stdin.read()
   
   # qry = "SELECT filter_string FROM TBL_FILTER_SETUP WHERE filter_type='FT003'"
