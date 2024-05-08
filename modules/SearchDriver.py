@@ -54,6 +54,12 @@ class SearchDriver(webdriver.Chrome):
     # self.options.add_argument('log-level=2')
     self.options.add_experimental_option('excludeSwitches', ['enable-logging'])
     
+    # disable download & caching
+    self.options.add_experimental_option("prefs", {
+      "download.default_directory": os.devnull
+      })
+    self.options.add_argument("disable-cache")
+    
     super().__init__(service=self.service, options=self.options)
   
   def __del__ (self):
@@ -71,7 +77,7 @@ def initialize():
 if __name__ == "__main__":
   crawler = SearchDriver()
   try:
-    crawler.get("https://namu.wiki/w/%EB%82%98%EB%AC%B4%EC%9C%84%ED%82%A4:%EB%8C%80%EB%AC%B8")
+    crawler.get("https://www.youtube.com/watch?t=5615&v=0_5NSM54cEc&feature=youtu.be")
   except selenium.common.exceptions.WebDriverException as e:
     if "net::ERR_CONNECTION_TIMED_OUT" in e.msg:
       sys.exit(1)
