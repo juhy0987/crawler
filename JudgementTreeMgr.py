@@ -15,64 +15,12 @@ class JudgementTree(object):
   def __init__(self):
     self.queryDict = dict()
     self.treeDict = dict()
-    self.dns_tns = None
-    self.pool = None
-    
-    self.HostIP = ""
-    self.Sid = ""
-    self.Port = 0
-    self.ID = ""
-    self.Password = ""
-    self.Min = 0
-    self.Max = 2
-    
-    self.DBUpdatePeriod = 10
-    
+
     self.config = None
   
   def init(self):
     self.queryDict = oracQry.treeDict
     self.treeDict.clear()
-  
-  def load(self, sFilePath):
-    if self.dns_tns and self.pool:
-      return
-    
-    judgementDBFD = open(sFilePath, "rt")
-    print("[Judgement Load] File Path: {}".format(sFilePath), file=sys.stderr)
-    
-    while True:
-      sBufIn = judgementDBFD.readline()
-      if not sBufIn:
-        judgementDBFD.close()
-        break
-      elif sBufIn[0] == '#' or sBufIn[0] == '\n':
-        continue
-      
-      try:
-        option, value = sBufIn.split()
-      except ValueError:
-        print("[Judgement Load] Wrong formated string: {}".format(sBufIn), file=sys.stderr)
-        continue
-      
-      try:
-        curValue = self.__dict__[option]
-      except KeyError:
-        print("[Judgement Load] There's no option [{}]".format(option), file=sys.stderr)
-        continue
-      else:
-        pass
-      
-      if type(curValue) == int:
-        value = int(value)
-      
-      if curValue != value:
-        self.__dict__[option] = value
-        print("[Judgement changed] {}: {} > {}".format(option, curValue, value), file=sys.stderr)
-
-    
-    print("[Judgement Load] Load Process Completed", file=sys.stderr)
-    sys.stderr = self.config.applyLog(sys.stderr)
   
   def lookup(self, sURL):
     for key in self.treeDict.keys():
@@ -87,6 +35,7 @@ class JudgementTree(object):
     for key in self.queryDict.keys():
       if not self.update(key):
         print("[Judgement Update] Tree [{}] Updated".format(key), file=sys.stderr)
+        sys.stderr = self.config.applyLog(sys.stderr)
         cnt += 1
     
     print("[Judgement Update] Tree Update Completed, Success: {}, Failed: {}".format(cnt, len(self.queryDict)-cnt), file=sys.stderr)
@@ -120,23 +69,19 @@ class JudgementTree(object):
 
 
 class JudgementTreeMgr(multiprocessing.managers.Namespace):
-  def __init__(self, sFilePath, config):
+  def __init__(self, sFilePath, configMgr):
     super().__init__()
     self.judgementTree = JudgementTree()
     self.sFilePath = sFilePath
-    self.judgementTree.config = config
+    self.configMgr = configMgr
+    self.judgementTree.config = configMgr.getConfig()
     
     self.judgementTree.init()
-    try:
-      self.judgementTree.load(self.sFilePath)
-    except (FileNotFoundError,TypeError,OSError) as e:
-      print("[Judgement Init] There's no DB Config File [{}]".format(sFilePath), file=sys.stderr)
-      print(str(e))
-      sys.exit(1)
     self.judgementTree.updateAll()
     
     self.updaterKillFlag = False
-    self.updater = multiprocessing.Process(target=self.update, daemon=True)
+    self.conn, cConn = multiprocessing.Pipe()
+    self.updater = multiprocessing.Process(target=self.update, args=(cConn), daemon=True)
     self.updater.start()
   
   def lookup(self, sURL):
@@ -146,33 +91,46 @@ class JudgementTreeMgr(multiprocessing.managers.Namespace):
   
   def reviveUpdater(self):
     if not self.updater.is_alive():
-      self.updater = multiprocessing.Process(target=self.update, daemon=True)
+      self.conn, cConn = multiprocessing.Pipe()
+      self.updater = multiprocessing.Process(target=self.update, args=(cConn), daemon=True)
       self.updater.start()
   
-  def update(self):
+  def update(self, conn):
     sys.stderr = self.judgementTree.config.applyLog(sys.stderr)
     while True:
-      time.sleep(self.judgementTree.DBUpdatePeriod)
+      time.sleep(self.judgementTree.config.DBUpdatePeriod)
       if self.updaterKillFlag:
         break
       
       try:
-        self.judgementTree.load(self.sFilePath)
-      except (FileNotFoundError,TypeError,OSError):
-        print("[Judgement Update] There's no DB Config File [{}]".format(self.sFilePath), file=sys.stderr)
-      except Exception as e:
-        print(str(e), file=sys.stderr)
+        if conn.poll(0.001):
+          data = conn.recv().split()
+          match data[0]:
+            case "config":
+              match data[1]:
+                case "update":
+                  self.judgementTree.config = self.configMgr.getConfig()
+                  
+                  # apply changed configuration
+                  print("[Crawler] Process[{}] configuration change applied".format("judgement"), file=sys.stderr)
+                case _:
+                  pass
+            case  _:
+              pass
+      except BrokenPipeError:
+        break
         
       self.judgementTree.updateAll()
       
       sys.stderr = self.judgementTree.config.applyLog(sys.stderr)
       
-  def changeConfig(self, config):
-    if config:
-      self.judgementTree.config = config
+  def getUpdaterPID(self):
+    if self.updater.is_alive():
+      return self.updater.pid
+    return -1
   
-  def changePath(self, sFilePath):
-    self.sFilePath = sFilePath
+  def changeConfig(self):
+    self.conn.send("config update")
 
 if __name__=="__main__":
   import os
