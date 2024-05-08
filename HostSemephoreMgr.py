@@ -35,15 +35,14 @@ class HostSemaphoreMgr(multiprocessing.managers.Namespace):
         self.curRequest[sHost] = preSet
       
       self.curRequest[sHost] -= 1
-      self.lock.release()
       return True
+    finally:
+      self.lock.release()
 
     if curHost <= 0:
-      self.lock.release()
       return False
     
     self.curRequest[sHost] -= 1
-    self.lock.release()
     return True
 
   def release(self, sURL):
