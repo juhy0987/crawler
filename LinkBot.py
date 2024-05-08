@@ -5,12 +5,14 @@ import multiprocessing
 import multiprocessing.managers
 import atexit
 import pickle
+import signal
 
 import lib
-from Config import Config, ConfigMgr
-from JudgementTreeMgr import JudgementTree, JudgementTreeMgr
-from DuplicationDBMgr import DuplicationDB, DuplicationDBMgr
+from Config import ConfigMgr
+from JudgementTreeMgr import JudgementTreeMgr
+from DuplicationDBMgr import DuplicationDBMgr
 from HostSemephoreMgr import HostSemaphoreMgr
+from KeywordMgr import KeywordMgr
 
 CONFIGPATH = "./config/linkbot.conf"
 ORACLEDB_CONFIGPATH = "./config/oracdb.conf"
@@ -24,6 +26,7 @@ MyManager.register("JudgementTreeMgr", JudgementTreeMgr)
 MyManager.register("DuplicationDBMgr", DuplicationDBMgr)
 MyManager.register("HostSemaphoreMgr", HostSemaphoreMgr)
 MyManager.register("CrawlerPIDMgr", lib.CrawlerPIDMgr)
+MyManager.register("KeywordMgr", KeywordMgr)
 
 def initConfig(manager):
   configMgr = manager.ConfigMgr(CONFIGPATH)
@@ -42,6 +45,10 @@ def initHostSemephore(manager, config):
   hostSemaphoreMgr = manager.HostSemaphoreMgr(config)
   return hostSemaphoreMgr
 
+def initKeyword(manager, config):
+  keywordMgr = manager.KeywordMgr(config)
+  return keywordMgr
+
 def writerProcess(id, chiefConn, configMgr, q):
   config = configMgr.getConfig()
   
@@ -53,9 +60,9 @@ def writerProcess(id, chiefConn, configMgr, q):
       try:
         data = data.split()
         match data[0]:
-          case "C":
+          case "config":
             match data[1]:
-              case "U":
+              case "update":
                 config = configMgr.getConfig()
               case _:
                 pass
@@ -72,7 +79,6 @@ def writerProcess(id, chiefConn, configMgr, q):
         tEnd = time.time()
         fd.write("Elapsed time: {}\n".format(tEnd-tStart))
         fd.write("stop!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n\n\n\n\n\n")
-        cnt = 0
     time.sleep(1)
 
 def runMode1(config):
@@ -100,9 +106,13 @@ def runMode3(config):
 
 # ----------------- Emergency Handler ---------------- #
 
+def sigIntHanlder(signal, frame):
+  print("KeyboardInterrupt", file=sys.stderr)
+  sys.exit(0)
+
 def emergencyProcessKill(crawlerPIDMgr):
   time.sleep(5)
-  pidDict = crawlerPIDMgr.getPid()
+  pidDict = crawlerPIDMgr.getPidDict()
   for key, pid in pidDict.items():
     if sys.platform == 'win32':
       p = subprocess.Popen(["taskkill", "/pid", str(pid), "/t", "/f"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -117,13 +127,12 @@ def emergencyProcessKill(crawlerPIDMgr):
   if sys.platform == 'win32':
     p = subprocess.Popen(["taskkill", "/t", "/f", "/im", "chromedriver.exe"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
   elif sys.platform == 'linux':
-    p = subprocess.Popen(["killall", "-9", "chromedriver"])
+    p = subprocess.Popen(["killall", "-9", "chromedriver"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    p = subprocess.Popen(["killall", "-9", "chrome"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
   output, err = p.communicate()
   # p = subprocess.Popen(["taskkill", "/t", "/f", "/im", "chrome.exe"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
   # output, err = p.communicate()
   
-  
-
 def emergencyQBackup(q, BackupFilePath):
   backupList = []
   while not q.empty():
@@ -131,12 +140,11 @@ def emergencyQBackup(q, BackupFilePath):
   
   if backupList:
     try:
-      fd = open(BackupFilePath, "wb")
+      with open(BackupFilePath, "wb") as fd:
+        pickle.dump(backupList, fd)
     except (FileNotFoundError, TypeError, OSError):
-      sys.exit(1)
-    
-    pickle.dump(backupList, fd)
-    fd.close()
+      pass
+  
   try:
     os.remove(config.PIDFilePath)
   except FileNotFoundError:
@@ -144,12 +152,11 @@ def emergencyQBackup(q, BackupFilePath):
 
 def emergencyQWrite(q, URLLogFilePath):
   try:
-    fd = open(config.URLLogFilePath, "at")
+    with open(config.URLLogFilePath, "at") as fd:
+      while not q.empty():
+        fd.write(q.get() + '\n')
   except (FileNotFoundError, TypeError, OSError):
-    sys.exit(1)
-  
-  while not q.empty():
-    fd.write(q.get() + '\n')
+    pass
 
 # --------------- Emergency Handler End ---------------- #
 
@@ -161,22 +168,34 @@ if __name__=="__main__":
   manager.start()
   managers = []
   
+  # managers
+  # 0: configuration manager
+  # 1: selenium process emergency killer
+  # 2: judgement tree maintain & update manager
+  # 3: duplication url check lru manager
+  # 4: url semaphore manager
+  # 5: keyword update manager
+  
   # Settings Initiate
   managers.append(initConfig(manager)) # [0]: config
   config = managers[0].getConfig()
   sys.stderr = open(config.LogFilePath, "at")
-  # Judge DB Initiate
-  managers.append(initJudgementTree(manager, config)) # [1]: Tree
-  
-  # Duplication DB Initiate
-  managers.append(initDuplicationDB(manager, config)) # [2]: Duplicate
   
   # Process Killer Initiate
   managers.append(manager.CrawlerPIDMgr())
-  atexit.register(emergencyProcessKill, managers[3])
+  atexit.register(emergencyProcessKill, managers[1])
+  
+  # Judge DB Initiate
+  managers.append(initJudgementTree(manager, config)) # [2]: Tree
+  
+  # Duplication DB Initiate
+  managers.append(initDuplicationDB(manager, config)) # [3]: Duplicate
   
   # Semephore Initiate
   managers.append(initHostSemephore(manager, config))
+  
+  # Keyword Initiate
+  managers.append(initKeyword(manager, config))
   
   # Writer Initialize
   writerQ = multiprocessing.Queue()
@@ -193,6 +212,8 @@ if __name__=="__main__":
   
   atexit.register(emergencyQBackup, urlQ, config.BackupFilePath)
   atexit.register(emergencyQWrite, writerQ, config.URLLogFilePath)
+  
+  signal.signal(signal.SIGINT, sigIntHanlder)
   
   # Start URL Put
   if os.path.isfile(config.BackupFilePath):
@@ -242,6 +263,18 @@ if __name__=="__main__":
     for id in deadlist:
       processMgr.delProcess(id)
       processMgr.setUnusedNum(id)
+      
+      pid = managers[3].getPid(id)
+      if pid < 0:
+        continue
+      
+      if sys.platform == 'win32':
+        p = subprocess.Popen(["taskkill", "/pid", str(pid), "/t", "/f"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+      elif sys.platform == 'linux':
+        p = subprocess.Popen(["pkill", "-9", "-P", str(pid)], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+      else:
+        continue
+      output, err = p.communicate()
     
     if not writer.is_alive():
       toWriterConn, writerConn = multiprocessing.Pipe()
@@ -251,22 +284,33 @@ if __name__=="__main__":
                                   daemon=True)
       writer.start()
       print("[Linkbot] Revived writer process", file=sys.stderr)
-      config.applyLog(sys.stderr)
+      sys.stderr = config.applyLog(sys.stderr)
     
     managers[0].reviveUpdater()
-    # managers[1].reviveUpdater()
-    managers[2].reviveRecoverer()
+    managers[2].reviveUpdater()
+    managers[3].reviveRecoverer()
+    # managers[5].reviveUpdater()
+    
+    managers[1].setPid("treeMgr", managers[2].getUpdaterPID())
+    # managers[1].setPid("keywordMgr", managers[5].getUpdatePID())
       
     if managers[0].getUpdateFlag():
       for id, conn in processMgr.pipes.items():
-        conn.send("C U")
-      toWriterConn.send("C U")
+        conn.send("config update")
+      toWriterConn.send("config update")
       
       managers[0].setUpdateFlag(False)
       config = managers[0].getConfig()
       
-      managers[2].changeConfig(config)
+      managers[2].changeConfig()
+      managers[3].changeConfig(config)
+      managers[4].changeConfig(config)
+      # managers[5].changeConfig()
       processMgr.setMaxProcess(config.MaxProcess)
+    
+    if managers[5].getUpdateFlag():
+      for id, conn in processMgr.pipes.items():
+        conn.send("Keyword Update")
     
     if len(processMgr.children) < config.MaxProcess and not urlQ.empty():
       processMgr.addProcess(lib.process, (managers, urlQ, writerQ))
