@@ -73,8 +73,9 @@ def process (processId, chiefMgrConn, managers, urlQ, writerQ):
             case "keyword":
               match data[1]:
                 case "update":
-                  # keyword = managers[5].getKeyword()
-                  pass
+                  keyword = managers[5].getKeyword()
+                  
+                  print("[Crawler] Process[{}] keyword change applied".format(processId), file=sys.stderr)
                 case _:
                   pass
             
@@ -114,7 +115,9 @@ def process (processId, chiefMgrConn, managers, urlQ, writerQ):
         continue
       
       if managers[3].mutualCheck(url): # 1: matched
-        managers[4].release(url)
+        if flag:
+          managers[4].release(url)
+          flag = False
         continue
       
       cnt += 1
@@ -176,10 +179,15 @@ def process (processId, chiefMgrConn, managers, urlQ, writerQ):
           break
         elif "net::ERR_CONNECTION_REFUSED" in e.msg:
           continue
+        elif "cannot determine loading status" in e.msg:
+          # chrome error
+          continue
         else:
           raise e
       finally:
-        flag = not managers[4].release(url)
+        if flag:
+          managers[4].release(url)
+          flag = False
       
       sHost = URL.getProtocolHost(url)
       ############### Weights Calculation ################
@@ -241,13 +249,17 @@ def process (processId, chiefMgrConn, managers, urlQ, writerQ):
             if not managers[3].lookup(link):
               urlQ.put((link, depth+1))
   except KeyboardInterrupt:
-    managers[4].release(url)
+    if flag:
+      managers[4].release(url)
+      flag = False
     managers[3].delete(url)
     urlQ.put((url, depth+1))
     sys.exit(0)
   except Exception as e:
     print("[Crawler Load] Unhandled Error: {}: {}".format(e, url), file=sys.stderr)
-    managers[4].release(url)
+    if flag:
+      managers[4].release(url)
+      flag = False
     managers[3].delete(url)
     urlQ.put((url, depth))
     raise e
