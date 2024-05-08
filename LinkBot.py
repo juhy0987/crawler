@@ -32,8 +32,8 @@ def initConfig(manager):
   configMgr = manager.ConfigMgr(CONFIGPATH)
   return configMgr
 
-def initJudgementTree(manager, config):
-  # judgementTreeMgr = manager.JudgementTreeMgr(ORACLEDB_CONFIGPATH, config)
+def initJudgementTree(manager, configMgr):
+  # judgementTreeMgr = manager.JudgementTreeMgr(ORACLEDB_CONFIGPATH, configMgr)
   # return judgementTreeMgr
   return None
 
@@ -45,9 +45,10 @@ def initHostSemephore(manager, config):
   hostSemaphoreMgr = manager.HostSemaphoreMgr(config)
   return hostSemaphoreMgr
 
-def initKeyword(manager, config):
-  keywordMgr = manager.KeywordMgr(config)
-  return keywordMgr
+def initKeyword(manager, configMgr):
+  # keywordMgr = manager.KeywordMgr(configMgr)
+  # return keywordMgr
+  return None
 
 def writerProcess(id, chiefConn, configMgr, q):
   config = configMgr.getConfig()
@@ -78,7 +79,8 @@ def writerProcess(id, chiefConn, configMgr, q):
       if cnt >= 1000:
         tEnd = time.time()
         fd.write("Elapsed time: {}\n".format(tEnd-tStart))
-        fd.write("stop!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n\n\n\n\n\n")
+        fd.write("1000!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n\n\n\n\n\n")
+        cnt = 0
     time.sleep(1)
 
 def runMode1(config):
@@ -121,6 +123,7 @@ def emergencyProcessKill(crawlerPIDMgr):
     else:
       continue
     output, err = p.communicate()
+    print("Linkbot killed children")
     # print(output.decode("cp949"))
     # print(err.decode('cp949'))
   
@@ -186,7 +189,7 @@ if __name__=="__main__":
   atexit.register(emergencyProcessKill, managers[1])
   
   # Judge DB Initiate
-  managers.append(initJudgementTree(manager, config)) # [2]: Tree
+  managers.append(initJudgementTree(manager, managers[0])) # [2]: Tree
   
   # Duplication DB Initiate
   managers.append(initDuplicationDB(manager, config)) # [3]: Duplicate
@@ -195,7 +198,7 @@ if __name__=="__main__":
   managers.append(initHostSemephore(manager, config))
   
   # Keyword Initiate
-  managers.append(initKeyword(manager, config))
+  managers.append(initKeyword(manager, managers[0]))
   
   # Writer Initialize
   writerQ = multiprocessing.Queue()
@@ -250,7 +253,7 @@ if __name__=="__main__":
         if url[-1] == '/':
           url = url[:-1]
         urlQ.put((url, 0))
-    managers[2].clear()
+    managers[3].clear()
   
   # Process Start
   
@@ -264,7 +267,7 @@ if __name__=="__main__":
       processMgr.delProcess(id)
       processMgr.setUnusedNum(id)
       
-      pid = managers[3].getPid(id)
+      pid = managers[1].getPid(id)
       if pid < 0:
         continue
       
@@ -289,10 +292,10 @@ if __name__=="__main__":
     managers[0].reviveUpdater()
     managers[2].reviveUpdater()
     managers[3].reviveRecoverer()
-    # managers[5].reviveUpdater()
+    managers[5].reviveUpdater()
     
     managers[1].setPid("treeMgr", managers[2].getUpdaterPID())
-    # managers[1].setPid("keywordMgr", managers[5].getUpdatePID())
+    managers[1].setPid("keywordMgr", managers[5].getUpdaterPID())
       
     if managers[0].getUpdateFlag():
       for id, conn in processMgr.pipes.items():
@@ -305,12 +308,12 @@ if __name__=="__main__":
       managers[2].changeConfig()
       managers[3].changeConfig(config)
       managers[4].changeConfig(config)
-      # managers[5].changeConfig()
+      managers[5].changeConfig()
       processMgr.setMaxProcess(config.MaxProcess)
     
     if managers[5].getUpdateFlag():
       for id, conn in processMgr.pipes.items():
-        conn.send("Keyword Update")
+        conn.send("keyword update")
     
     if len(processMgr.children) < config.MaxProcess and not urlQ.empty():
       processMgr.addProcess(lib.process, (managers, urlQ, writerQ))
@@ -321,5 +324,5 @@ if __name__=="__main__":
       cnt = 0
     time.sleep(1)
   
-  print("Linkbot Finished")
+  print("Linkbot Terminated")
   os.remove(config.PIDFilePath)
