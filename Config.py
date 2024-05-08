@@ -21,6 +21,8 @@ class Config(object):
     
     # Linkbot Work Settings
     self.ConfigLoadPeriod = 30 * 60 # seconds
+    self.KeywordLoadPeriod = 30 * 60 # seconds
+    self.DBUpdatePeriod = 30 * 60 # seconds
     self.qEmptyTimeoutLimit = 10
     
     # Start & End Settings
@@ -195,12 +197,9 @@ class ConfigMgr(multiprocessing.managers.Namespace):
     self.lock = multiprocessing.RLock()
     
     self.updaterKillFlag = False
+    self.updateFlag = False
     self.updater = threading.Thread(target=self.autoUpdate, daemon=True)
     self.updater.start()
-    
-    self.updateFlag = False
-    
-    atexit.register(self.dump, "./tmp.txt")
   
   def getConfig(self):
     if self.lock.acquire(block=True, timeout=3.0):
