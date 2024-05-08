@@ -56,9 +56,13 @@ class HostSemaphoreMgr(multiprocessing.managers.Namespace):
         sHost = semaphore
         break
     
+    if not self.lock.acquire(block=True, timeout=3.0):
+      return False
+    
     try:
       curHost = self.curRequest[sHost]
     except KeyError:
+      self.lock.release()
       return False
     
     self.curRequest[sHost] += 1
@@ -66,15 +70,13 @@ class HostSemaphoreMgr(multiprocessing.managers.Namespace):
       limit = self.config.URLSemaphore[sHost]
     except KeyError:
       limit = self.config.DefaultSemaphore
-      
+    
     if self.curRequest[sHost] >= limit:
-      self.lock.acquire(block=True)
       try:
         del(self.curRequest[sHost])
       except KeyError:
         pass
-      self.lock.release()
-    
+    self.lock.release()
     return True
   
   def changeConfig(self, config):
