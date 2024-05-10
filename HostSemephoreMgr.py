@@ -105,7 +105,7 @@ class HostSemaphoreMgr(multiprocessing.managers.Namespace):
       self.releaser.start()
   
   def deadlockCheck(self):
-    sys.stderr = CustomLogging.StreamToLogger(self.db.logger, logging.CRITICAL)
+    sys.stderr = CustomLogging.StreamToLogger(self.logger, logging.CRITICAL)
     while True:
       cnt = 0
       while cnt < self.config.RecoveryDeadlockPeriod: 
@@ -115,7 +115,7 @@ class HostSemaphoreMgr(multiprocessing.managers.Namespace):
         time.sleep(1)
       
       self.lock.acquire(block=True)
-      urls = self.curRequest.keys()
+      urls = list(self.curRequest.keys())
       for key in self.locker.keys():
         try:
           urls.remove(self.locker[key])

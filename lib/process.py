@@ -105,7 +105,7 @@ def process (processId, chiefMgrConn, managers, urlQ, writerQ):
         crawler.execute_script("document.querySelectorAll('iframe').forEach(e => e.remove());")  # iframe 삭제
       except (selenium.common.exceptions.JavascriptException,
               selenium.common.exceptions.TimeoutException):
-        logger.debug("Cache Clear check")
+        pass
       
       # if not managers[2].lookup(url): # 0: matched
       #   continue
