@@ -1,10 +1,12 @@
 import sys
 import pickle
 import cx_Oracle
+import logging
 
 CONFIG_PATH = "./config/oracdb.conf"
 
 def main():
+  logger = logging.getLogger('Linkbot.OracleManager')
   config = dict()
   fd = open(CONFIG_PATH, "rt")
   
@@ -19,7 +21,7 @@ def main():
     try:
       option, value = sBufIn.split()
     except ValueError:
-      print("[Judgement Load] Wrong formated string: {}".format(sBufIn), file=sys.stderr)
+      logger.error("Wrong formated string: {}".format(sBufIn))
       continue
     
     config[option] = value
@@ -27,7 +29,7 @@ def main():
   qry = sys.stdin.read()
   
   # qry = "SELECT filter_string FROM TBL_FILTER_SETUP WHERE filter_type='FT003'"
-  print(qry, file=sys.stderr)
+  # print(qry, file=sys.stderr)
   conts = []
   try:
     dsn_tns = cx_Oracle.makedsn(config["HostIP"], config["Port"], config["Sid"])

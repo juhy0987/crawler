@@ -4,14 +4,19 @@ import pickle
 import subprocess
 import multiprocessing
 import multiprocessing.managers
+import logging
 
 from query import oracQry
 from Config import Config
 from modules import URL
+from modules import CustomLogging
 from modules.URLTree import URLTree
 from modules.RegexURLTree import RegexTree
 
 class JudgementTree(object):
+  mainLogger = logging.getLogger('Linkbot')
+  logger = logging.getLogger('Linkbot.JudgementTree')
+  
   def __init__(self):
     self.queryDict = dict()
     self.treeDict = dict()
@@ -29,17 +34,13 @@ class JudgementTree(object):
     return -1
   
   def updateAll(self):
-    print("[Judgement Update] Tree Update", file=sys.stderr)
-    sys.stderr = self.config.applyLog(sys.stderr)
     cnt = 0
     for key in self.queryDict.keys():
       if not self.update(key):
-        print("[Judgement Update] Tree [{}] Updated".format(key), file=sys.stderr)
-        sys.stderr = self.config.applyLog(sys.stderr)
+        self.logger.info("Tree [{}] Updated".format(key))
         cnt += 1
     
-    print("[Judgement Update] Tree Update Completed, Success: {}, Failed: {}".format(cnt, len(self.queryDict)-cnt), file=sys.stderr)
-    sys.stderr = self.config.applyLog(sys.stderr)
+    self.logger.info("Update Completed, Success: {}, Failed: {}".format(cnt, len(self.queryDict)-cnt))
   
   def update(self, key):
     oracMgr = subprocess.Popen(["python", "oracMgr.py"], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -58,7 +59,7 @@ class JudgementTree(object):
       case 1:
         tmpTree = RegexTree()
       case _:
-        print("[Judgement Update] Wrong Tree Type: {}".format(self.queryList[id][1]), file=sys.stderr)
+        self.logger.error("Wrong Tree Type: {}".format(self.queryList[id][1]))
         return -1
   
     if tmpTree.load(conts) < 0:
@@ -75,13 +76,14 @@ class JudgementTreeMgr(multiprocessing.managers.Namespace):
     self.sFilePath = sFilePath
     self.configMgr = configMgr
     self.judgementTree.config = configMgr.getConfig()
+    CustomLogging.setLogConfig(self.judgementTree.mainLogger, self.judgementTree.config)
     
     self.judgementTree.init()
     self.judgementTree.updateAll()
     
     self.updaterKillFlag = False
     self.conn, cConn = multiprocessing.Pipe()
-    self.updater = multiprocessing.Process(target=self.update, args=(cConn), daemon=True)
+    self.updater = multiprocessing.Process(target=self.update, args=(cConn,), daemon=True)
     self.updater.start()
   
   def lookup(self, sURL):
@@ -92,37 +94,39 @@ class JudgementTreeMgr(multiprocessing.managers.Namespace):
   def reviveUpdater(self):
     if not self.updater.is_alive():
       self.conn, cConn = multiprocessing.Pipe()
-      self.updater = multiprocessing.Process(target=self.update, args=(cConn), daemon=True)
+      self.updater = multiprocessing.Process(target=self.update, args=(cConn,), daemon=True)
       self.updater.start()
   
   def update(self, conn):
-    sys.stderr = self.judgementTree.config.applyLog(sys.stderr)
+    sys.stderr = CustomLogging.StreamToLogger(self.judgementTree.logger, logging.CRITICAL)
     while True:
-      time.sleep(self.judgementTree.config.DBUpdatePeriod)
-      if self.updaterKillFlag:
-        break
+      cnt = 0
+      while cnt < self.judgementTree.config.DBUpdatePeriod:
+        if self.updaterKillFlag:
+          sys.exit(0)
+          
+        try:
+          if conn.poll(0.001):
+            data = conn.recv().split()
+            match data[0]:
+              case "config":
+                match data[1]:
+                  case "update":
+                    self.judgementTree.config = self.configMgr.getConfig()
+                    
+                    # apply changed configuration
+                    CustomLogging.setLogConfig(self.judgementTree.mainLogger, self.judgementTree.config)
+                    self.judgementTree.logger.info("Configuration change applied")
+                  case _:
+                    pass
+              case  _:
+                pass
+        except BrokenPipeError:
+          sys.exit(0)
+        cnt += 1
+        time.sleep(1)
       
-      try:
-        if conn.poll(0.001):
-          data = conn.recv().split()
-          match data[0]:
-            case "config":
-              match data[1]:
-                case "update":
-                  self.judgementTree.config = self.configMgr.getConfig()
-                  
-                  # apply changed configuration
-                  print("[Crawler] Process[{}] configuration change applied".format("judgement"), file=sys.stderr)
-                case _:
-                  pass
-            case  _:
-              pass
-      except BrokenPipeError:
-        break
-        
       self.judgementTree.updateAll()
-      
-      sys.stderr = self.judgementTree.config.applyLog(sys.stderr)
       
   def getUpdaterPID(self):
     if self.updater.is_alive():

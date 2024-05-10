@@ -6,6 +6,7 @@ import multiprocessing.managers
 import atexit
 import pickle
 import signal
+import logging
 
 import lib
 from Config import ConfigMgr
@@ -13,6 +14,7 @@ from JudgementTreeMgr import JudgementTreeMgr
 from DuplicationDBMgr import DuplicationDBMgr
 from HostSemephoreMgr import HostSemaphoreMgr
 from KeywordMgr import KeywordMgr
+from modules import CustomLogging
 
 CONFIGPATH = "./config/linkbot.conf"
 ORACLEDB_CONFIGPATH = "./config/oracdb.conf"
@@ -33,9 +35,9 @@ def initConfig(manager):
   return configMgr
 
 def initJudgementTree(manager, configMgr):
-  # judgementTreeMgr = manager.JudgementTreeMgr(ORACLEDB_CONFIGPATH, configMgr)
-  # return judgementTreeMgr
-  return None
+  judgementTreeMgr = manager.JudgementTreeMgr(ORACLEDB_CONFIGPATH, configMgr)
+  return judgementTreeMgr
+  # return None
 
 def initDuplicationDB(manager, config):
   duplicationDBMgr = manager.DuplicationDBMgr(DUPLICATIONDB_CONFIGPATH, config)
@@ -46,12 +48,16 @@ def initHostSemephore(manager, config):
   return hostSemaphoreMgr
 
 def initKeyword(manager, configMgr):
-  # keywordMgr = manager.KeywordMgr(configMgr)
-  # return keywordMgr
-  return None
+  keywordMgr = manager.KeywordMgr(configMgr)
+  return keywordMgr
+  # return None
 
 def writerProcess(id, chiefConn, configMgr, q):
+  mainLogger = logging.getLogger('Linkbot')
+  logger = logging.getLogger('Linkbot.Writer')
+  
   config = configMgr.getConfig()
+  CustomLogging.setLogConfig(mainLogger, config)
   
   cnt = 0
   tStart = time.time()
@@ -65,12 +71,16 @@ def writerProcess(id, chiefConn, configMgr, q):
             match data[1]:
               case "update":
                 config = configMgr.getConfig()
+                
+                # apply changed configuration
+                CustomLogging.setLogConfig(mainLogger, config)
+                logger.info("Configuration change applied")
               case _:
                 pass
           case _:
             pass
       except Exception as e:
-        print(str(e), file=sys.__stdout__)
+        logger.error(str(e))
     
     with open(config.URLLogFilePath, "at") as fd:
       while not q.empty():
@@ -123,7 +133,7 @@ def emergencyProcessKill(crawlerPIDMgr):
     else:
       continue
     output, err = p.communicate()
-    print("Linkbot killed children")
+    
     # print(output.decode("cp949"))
     # print(err.decode('cp949'))
   
@@ -133,6 +143,7 @@ def emergencyProcessKill(crawlerPIDMgr):
     p = subprocess.Popen(["killall", "-9", "chromedriver"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     p = subprocess.Popen(["killall", "-9", "chrome"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
   output, err = p.communicate()
+  print("Linkbot killed children")
   # p = subprocess.Popen(["taskkill", "/t", "/f", "/im", "chrome.exe"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
   # output, err = p.communicate()
   
@@ -142,20 +153,23 @@ def emergencyQBackup(q, BackupFilePath):
     backupList.append(q.get())
   
   if backupList:
+    dir = '/'.join(BackupFilePath.split('/')[:-1])
+    if dir and not os.path.exists(dir):
+      os.makedirs(dir)
+    
     try:
       with open(BackupFilePath, "wb") as fd:
         pickle.dump(backupList, fd)
     except (FileNotFoundError, TypeError, OSError):
       pass
-  
-  try:
-    os.remove(config.PIDFilePath)
-  except FileNotFoundError:
-    pass
 
 def emergencyQWrite(q, URLLogFilePath):
+  dir = '/'.join(URLLogFilePath.split('/')[:-1])
+  if dir and not os.path.exists(dir):
+    os.makedirs(dir)
+  
   try:
-    with open(config.URLLogFilePath, "at") as fd:
+    with open(URLLogFilePath, "at") as fd:
       while not q.empty():
         fd.write(q.get() + '\n')
   except (FileNotFoundError, TypeError, OSError):
@@ -166,6 +180,9 @@ def emergencyQWrite(q, URLLogFilePath):
 if __name__=="__main__":
   # Linkbot Initiate
   print("Linkbot Start")
+  logger = logging.getLogger('Linkbot')
+  sys.stderr = CustomLogging.StreamToLogger(logger, logging.CRITICAL)
+  
   # Shared Memory Manager Initiate
   manager = MyManager()
   manager.start()
@@ -182,7 +199,8 @@ if __name__=="__main__":
   # Settings Initiate
   managers.append(initConfig(manager)) # [0]: config
   config = managers[0].getConfig()
-  sys.stderr = open(config.LogFilePath, "at")
+  CustomLogging.setLogConfig(logger, config)
+  atexit.register(os.remove, config.PIDFilePath)
   
   # Process Killer Initiate
   managers.append(manager.CrawlerPIDMgr())
@@ -190,6 +208,7 @@ if __name__=="__main__":
   
   # Judge DB Initiate
   managers.append(initJudgementTree(manager, managers[0])) # [2]: Tree
+  managers[1].setPid("treeMgr", managers[2].getUpdaterPID())
   
   # Duplication DB Initiate
   managers.append(initDuplicationDB(manager, config)) # [3]: Duplicate
@@ -199,13 +218,14 @@ if __name__=="__main__":
   
   # Keyword Initiate
   managers.append(initKeyword(manager, managers[0]))
+  managers[1].setPid("keywordMgr", managers[5].getUpdaterPID())
   
   # Writer Initialize
   writerQ = multiprocessing.Queue()
   toWriterConn, writerConn = multiprocessing.Pipe()
-  writer = multiprocessing.Process(name="writer",
+  writer = multiprocessing.Process(name="Writer",
                                    target=writerProcess,
-                                   args=("writer", writerConn, managers[0], writerQ),
+                                   args=("Writer", writerConn, managers[0], writerQ),
                                    daemon=True)
   writer.start()
   
@@ -221,14 +241,12 @@ if __name__=="__main__":
   # Start URL Put
   if os.path.isfile(config.BackupFilePath):
     try:
-      fd = open(config.BackupFilePath, "rb")
+      with open(config.BackupFilePath, "rb") as fd:
+        startURL = pickle.load(fd)
+      os.remove(config.BackupFilePath)
     except (FileNotFoundError, TypeError, OSError):
       sys.exit(1)
-    
-    startURL = pickle.load(fd)
-    fd.close()
-    os.remove(config.BackupFilePath)
-    
+
     for url, depth in startURL:
       if url[-1] == '/':
         url = url[:-1]
@@ -242,7 +260,7 @@ if __name__=="__main__":
       case 3:
         startURL = runMode3(config)
       case _:
-        print("[Linkbot Init] Wrong Mode: {}".format(config.RunMode), file=sys.stderr)
+        logger.error("Wrong Mode: {}".format(config.RunMode))
         sys.exit(1)
     
     if startURL:
@@ -281,21 +299,24 @@ if __name__=="__main__":
     
     if not writer.is_alive():
       toWriterConn, writerConn = multiprocessing.Pipe()
-      writer = multiprocessing.Process(name="writer",
+      writer = multiprocessing.Process(name="Writer",
                                   target=writerProcess,
                                   args=("writer", writerConn, managers[0], writerQ),
                                   daemon=True)
       writer.start()
-      print("[Linkbot] Revived writer process", file=sys.stderr)
-      sys.stderr = config.applyLog(sys.stderr)
+      logger.info("Revived writer")
     
-    managers[0].reviveUpdater()
-    managers[2].reviveUpdater()
-    managers[3].reviveRecoverer()
-    managers[5].reviveUpdater()
-    
-    managers[1].setPid("treeMgr", managers[2].getUpdaterPID())
-    managers[1].setPid("keywordMgr", managers[5].getUpdaterPID())
+    if managers[0].reviveUpdater():
+      logger.info("Revived configuration updater")
+    if managers[2].reviveUpdater():
+      logger.info("Revived tree updater")
+      managers[1].setPid("treeMgr", managers[2].getUpdaterPID())
+    if managers[3].reviveRecoverer():
+      logger.info("Revived Duplication exclude DB Recoverer")
+    # no manager process on semephore manager
+    if managers[5].reviveUpdater():
+      logger.info("Revived keyword updater")
+      managers[1].setPid("keywordMgr", managers[5].getUpdaterPID())
       
     if managers[0].getUpdateFlag():
       for id, conn in processMgr.pipes.items():
@@ -304,6 +325,7 @@ if __name__=="__main__":
       
       managers[0].setUpdateFlag(False)
       config = managers[0].getConfig()
+      CustomLogging.setLogConfig(logger, config)
       
       managers[2].changeConfig()
       managers[3].changeConfig(config)
@@ -314,6 +336,8 @@ if __name__=="__main__":
     if managers[5].getUpdateFlag():
       for id, conn in processMgr.pipes.items():
         conn.send("keyword update")
+      
+      managers[5].setUpdateFlag(False)
     
     if len(processMgr.children) < config.MaxProcess and not urlQ.empty():
       processMgr.addProcess(lib.process, (managers, urlQ, writerQ))
@@ -325,4 +349,3 @@ if __name__=="__main__":
     time.sleep(1)
   
   print("Linkbot Terminated")
-  os.remove(config.PIDFilePath)

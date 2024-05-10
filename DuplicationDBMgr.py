@@ -2,11 +2,17 @@ import sys, atexit
 import time
 import threading
 import multiprocessing.managers
+import logging
 
 import redis
 import redis.exceptions
 
+from modules import CustomLogging
+
 class DuplicationDB(object):
+  mainLogger = logging.getLogger('Linkbot')
+  logger = logging.getLogger('Linkbot.DuplicationDB')
+  
   def __init__(self):
     self.HostIP = ""
     self.Port = 0
@@ -27,7 +33,7 @@ class DuplicationDB(object):
   
   def load(self, sFilePath):
     duplicateDBFD = open(sFilePath, "rt")
-    print("[Duplication Load] File Path: {}".format(sFilePath), file=sys.stderr)
+    self.logger.info("File Path: {}".format(sFilePath))
     
     while True:
       sBufIn = duplicateDBFD.readline()
@@ -40,13 +46,13 @@ class DuplicationDB(object):
       try:
         option, value = sBufIn.split()
       except ValueError:
-        print("[Dupliction Load] Wrong formated string: {}".format(sBufIn), file=sys.stderr)
+        self.logger.warning("Wrong formated string: {}".format(sBufIn))
         continue
       
       try:
         curValue = self.__dict__[option]
       except KeyError:
-        print("[Duplication Load] There's no option [{}]".format(option), file=sys.stderr)
+        self.logger.warning("There's no option [{}]".format(option))
         continue
       else:
         pass
@@ -56,7 +62,7 @@ class DuplicationDB(object):
       
       if curValue != value:
         self.__dict__[option] = value
-        print("[Duplication changed] {}: {} > {}".format(option, curValue, value), file=sys.stderr)
+        self.logger.info("{}: {} > {}".format(option, curValue, value))
     
     self.redisDB = redis.Redis(host=self.HostIP,
                           port=self.Port,
@@ -66,13 +72,12 @@ class DuplicationDB(object):
         self.isRedisWork = True
       else:
         self.isRedisWork = False
-        print("[Duplication Load] Redis DB Connection Failed", file=sys.stderr)
+        self.logger.error("Redis DB Connection Failed")
     except redis.exceptions.ConnectionError:
-      print("[Duplication Load] Redis DB Connection Failed", file=sys.stderr)
+      self.logger.error("Redis DB Connection Failed")
       self.isRedisWork = False
     
-    print("[Duplication Load] Load Process Completed", file=sys.stderr)
-    sys.stderr = self.config.applyLog(sys.stderr)
+    self.logger.info("Load Process Completed")
 
   def lookup(self, sURL):
     insertedTime = None
@@ -109,13 +114,12 @@ class DuplicationDB(object):
       insertedTime = self.db[url]
       del(self.db[url])
     except KeyError:
-      if not url:
-        print("[Duplication Insert] Wrong DB URL: {}".format(url), file=sys.stderr)
+      return None
     
     try:
       self.redisDB.hset(url, "insertedTime", insertedTime)
     except redis.exceptions.ConnectionError:
-      print("[Duplication Insert] DB not connected[{}:{}]".format(self.hostIP, self.port), file=sys.stderr)
+      self.logger.error("Redis DB Connection Failed")
       self.isRedisWork = False
 
       self.lru.append((url, insertedTime))
@@ -141,16 +145,16 @@ class DuplicationDB(object):
     try:
       self.redisDB.delete(sURL)
     except redis.exceptions.ConnectionError:
+      self.logger.error("Redis DB Connection Failed")
       self.isRedisWork = False
       
     return 0
   
   def clear(self):
     if self.redisDB.flushdb():
-      print("[Duplication Clear] DB cleared", file=sys.stderr)
+      self.logger.info("DB cleared")
     else:
-      print("[Duplication Clear] DB clear malfunctioned", file=sys.stderr)
-    sys.stderr = self.config.applyLog(sys.stderr)
+      self.logger.error("DB clear error")
 
 class DuplicationDBMgr(multiprocessing.managers.Namespace):
   def __init__(self, sFilePath, config):
@@ -159,11 +163,11 @@ class DuplicationDBMgr(multiprocessing.managers.Namespace):
     self.sFilePath = sFilePath
     
     self.db.config = config
+    CustomLogging.setLogConfig(self.db.mainLogger, self.db.config)
     try:
       self.db.load(sFilePath)
-    except (FileNotFoundError,TypeError,OSError) as e:
-      print("[Duplication Init] There's no DB Config File [{}]".format(sFilePath), file=sys.stderr)
-      print(str(e))
+    except (FileNotFoundError,TypeError,OSError):
+      self.db.logger.error("There's no DB Config File [{}]".format(sFilePath))
       sys.exit(1)
     
     self.lock = multiprocessing.RLock()
@@ -194,24 +198,28 @@ class DuplicationDBMgr(multiprocessing.managers.Namespace):
       self.recoverer.start()
   
   def recovery(self):
+    sys.stderr = CustomLogging.StreamToLogger(self.db.logger, logging.CRITICAL)
     while True:
-      time.sleep(self.db.DBRecoveryPeriod)
-      if self.recoveryKillFlag:
-        break
+      cnt = 0
+      while cnt < self.db.DBRecoveryPeriod: 
+        if self.recoveryKillFlag:
+          sys.exit(0)
+        cnt += 1
+        time.sleep(1)
       
-      if not self.db.isRedisWork and self.lock.acquire(block=True, timeout=10):
-        try:
+      try:
+        if not self.db.isRedisWork and self.lock.acquire(block=True, timeout=10):
           self.db.load(self.sFilePath)
-        except (FileNotFoundError,TypeError,OSError):
-          print("[Duplication Recovery] There's no DB Config File [{}]".format(self.sFilePath), file=sys.stderr)
-        except Exception as e:
-          print(str(e), file=sys.stderr)
         
-        while self.db.lru:
-          self.db.updateRedis()
-        self.lock.release()
-        
-      sys.stderr = self.db.config.applyLog(sys.stderr)
+          while self.db.lru:
+            self.db.updateRedis()
+      except (FileNotFoundError,TypeError,OSError):
+        self.db.logger.error("There's no DB Config File [{}]".format(self.sFilePath))
+      finally:
+        try:
+          self.lock.release()
+        except:
+          pass
   
   def delete(self, sURL):
     return self.db.delete(sURL)
@@ -231,6 +239,7 @@ class DuplicationDBMgr(multiprocessing.managers.Namespace):
   def changeConfig(self, config):
     if config:
       self.db.config = config
+      CustomLogging.setLogConfig(self.db.mainLogger, self.db.config)
   
   def changePath(self, sFilePath):
     self.sFilePath = sFilePath

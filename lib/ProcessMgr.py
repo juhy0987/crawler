@@ -17,7 +17,7 @@ class ProcessMgr(object):
     
     parentConn, childConn = multiprocessing.Pipe()
     args = (id, childConn) + args
-    newProcess = multiprocessing.Process(name=str(id), target=target, args=args, daemon=True)
+    newProcess = multiprocessing.Process(name="Crawler[{}]".format(id), target=target, args=args, daemon=True)
     
     if not newProcess:
       return None

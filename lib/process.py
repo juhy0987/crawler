@@ -4,6 +4,7 @@ import atexit
 import threading
 import multiprocessing
 import signal
+import logging
 
 import selenium
 from selenium.webdriver.support import expected_conditions as EC
@@ -17,6 +18,7 @@ from bs4 import BeautifulSoup
 from Config import Config
 from modules import SearchDriver
 from modules import URL
+from modules import CustomLogging
 
 class CrawlerPIDMgr(multiprocessing.managers.Namespace):
   def __init__(self):
@@ -39,23 +41,24 @@ def process (processId, chiefMgrConn, managers, urlQ, writerQ):
     raise BaseException
   
   qEmptyTimeoutCnt = 0
+  mainLogger = logging.getLogger('Linkbot')
+  logger = logging.getLogger('Linkbot.Crawler')
+  sys.stderr = CustomLogging.StreamToLogger(logger, logging.CRITICAL)
   config = managers[0].getConfig()
-  # keyword = managers[5].getKeyword()
-  sys.stderr = config.applyLog(sys.stderr)
+  CustomLogging.setLogConfig(mainLogger, config)
+  keyword = managers[5].getKeyword()
+  
   crawler = SearchDriver()
   managers[1].setPid(processId, crawler.service.process.pid)
   wait = WebDriverWait(crawler, timeout=0.1)
   
   # debug
-  print("[Crawler Load] Process[{}] Initiated ".format(processId), file=sys.stderr)
-  signal.signal(signal.SIGINT, sigIntHanlder)
+  logger.info("Initiated")
   atexit.register(terminateDriver, crawler)
   cnt = 0
-  flag = False
   try:
     while cnt < 500 and qEmptyTimeoutCnt < config.qEmptyTimeoutLimit:
       # config control
-      sys.stderr = config.applyLog(sys.stderr)
       try:
         if chiefMgrConn.poll(0.001):
           data = chiefMgrConn.recv().split()
@@ -66,7 +69,8 @@ def process (processId, chiefMgrConn, managers, urlQ, writerQ):
                   config = managers[0].getConfig()
                   
                   # apply changed configuration
-                  print("[Crawler] Process[{}] configuration change applied".format(processId), file=sys.stderr)
+                  CustomLogging.setLogConfig(mainLogger, config)
+                  logger.info("Configuration change applied")
                 case _:
                   pass
             
@@ -75,7 +79,7 @@ def process (processId, chiefMgrConn, managers, urlQ, writerQ):
                 case "update":
                   keyword = managers[5].getKeyword()
                   
-                  print("[Crawler] Process[{}] keyword change applied".format(processId), file=sys.stderr)
+                  logger.info("keyword change applied")
                 case _:
                   pass
             
@@ -83,10 +87,6 @@ def process (processId, chiefMgrConn, managers, urlQ, writerQ):
               pass
       except BrokenPipeError:
         break
-      except Exception as e:
-        print("[Crawler Insite] Error occured: {}".format(str(e)), file=sys.__stdout__)
-      # debug
-      # print("Process[{}] {} Threads Running".format(processId, len(threadMgr.threads)), file=sys.__stdout__)
       
       if urlQ.empty():
         qEmptyTimeoutCnt += 1
@@ -105,24 +105,21 @@ def process (processId, chiefMgrConn, managers, urlQ, writerQ):
         crawler.execute_script("document.querySelectorAll('iframe').forEach(e => e.remove());")  # iframe 삭제
       except (selenium.common.exceptions.JavascriptException,
               selenium.common.exceptions.TimeoutException):
-        pass
+        logger.debug("Cache Clear check")
       
       # if not managers[2].lookup(url): # 0: matched
       #   continue
-      flag = managers[4].acquire(url)
-      if not flag:
+      if not managers[4].acquire(processId, url):
         urlQ.put((url, depth))
         continue
       
       if managers[3].mutualCheck(url): # 1: matched
-        if flag:
-          managers[4].release(url)
-          flag = False
+        managers[4].release(processId)
         continue
       
       cnt += 1
       if cnt % 20 == 0:
-        print("[Crawler] Process[{}] Alive".format(processId), file=sys.stderr)
+        logger.debug("Alive")
         terminateDriver(crawler)
         crawler = SearchDriver()
         managers[1].setPid(processId, crawler.service.process.pid)
@@ -141,43 +138,47 @@ def process (processId, chiefMgrConn, managers, urlQ, writerQ):
           if managers[3].mutualCheck(url):
             continue
       except selenium.common.exceptions.TimeoutException as e:
-        urlQ.put((url, depth+1))
+        logger.debug("Timeout: {}".format(url))
         managers[3].delete(url)
+        urlQ.put((url, depth+1))
         continue
       except selenium.common.exceptions.InvalidSessionIdException as e:
-        if "invalid session id" in e.msg:
-          print("[Crawler Load] Invalid session id(Bot Detected): {}".format(url), file=sys.stderr)
-          urlQ.put((url, depth+1))
-          managers[3].delete(url)
-          continue
-        else:
-          raise e
+        logger.warning("Invalid session id: {}".format(url))
+        managers[3].delete(url)
+        urlQ.put((url, depth+1))
+        continue
       except selenium.common.exceptions.UnexpectedAlertPresentException:
+        logger.debug("Can't access: {}".format(url))
         continue
       except ConnectionResetError:
-        urlQ.put((url, depth+1))
+        logger.debug("Connection Reset: {}".format(url))
         managers[3].delete(url)
+        urlQ.put((url, depth+1))
+        continue
+      except selenium.common.exceptions.InvalidArgumentException:
+        logger.debug("Invalid Argument: {}".format(url))
+        continue
+      except selenium.common.exceptions.StaleElementReferenceException:
+        logger.debug("Not loaded element exists: {}".format(url))
         continue
       except selenium.common.exceptions.WebDriverException as e:
         if "net::ERR_CONNECTION_TIMED_OUT" in e.msg:
-          urlQ.put((url, depth+1))
+          logger.debug("Timeout: {}".format(url))
           managers[3].delete(url)
+          urlQ.put((url, depth+1))
           continue
-        elif "invalid session id" in e.msg:
-          print("[Crawler Load] Invalid session id: {}".format(url), file=sys.stderr)
-          urlQ.put((url, depth+1))
-          managers[3].delete(url)
-          raise e
         elif "net::ERR_NAME_NOT_RESOLVED" in e.msg:
-          print("[Crawler Load] Name Not Resolved: {}".format(url), file=sys.stderr)
+          logger.warning("Name Not Resolved: {}".format(url))
           continue
         elif ("net::ERR_INTERNET_DISCONNECTED" in e.msg or 
               "net::ERR_CONNECTION_RESET" in e.msg or
               "net::ERR_CONNECTION_CLOSED" in e.msg):
-          urlQ.put((url, depth))
+          logger.debug("Disconnected")
           managers[3].delete(url)
+          urlQ.put((url, depth))
           break
-        elif "net::ERR_CONNECTION_REFUSED" in e.msg:
+        elif ("net::ERR_CONNECTION_REFUSED" in e.msg or
+              "net::ERR_ADDRESS_UNREACHABLE" in e.msg):
           continue
         elif "cannot determine loading status" in e.msg:
           # chrome error
@@ -185,9 +186,7 @@ def process (processId, chiefMgrConn, managers, urlQ, writerQ):
         else:
           raise e
       finally:
-        if flag:
-          managers[4].release(url)
-          flag = False
+        managers[4].release(processId)
       
       sHost = URL.getProtocolHost(url)
       ############### Weights Calculation ################
@@ -213,6 +212,7 @@ def process (processId, chiefMgrConn, managers, urlQ, writerQ):
         # weight += keyword.cal("url", url)
         # weight += keyword.cal("page", page)
         # if weight >= config.KeyWeightLimit:
+        #   유해 사이트 목록에 추가
         #   writerQ.put(url)
       
       ############### Next Link Crawling ##################
@@ -249,27 +249,19 @@ def process (processId, chiefMgrConn, managers, urlQ, writerQ):
             if not managers[3].lookup(link):
               urlQ.put((link, depth+1))
   except KeyboardInterrupt:
-    if flag:
-      managers[4].release(url)
-      flag = False
-    managers[3].delete(url)
-    urlQ.put((url, depth+1))
-    sys.exit(0)
-  except Exception as e:
-    print("[Crawler Load] Unhandled Error: {}: {}".format(e, url), file=sys.stderr)
-    if flag:
-      managers[4].release(url)
-      flag = False
     managers[3].delete(url)
     urlQ.put((url, depth))
+    pass
+  except Exception as e:
+    logger.critical("Unhandled Error: {}".format(url))
+    managers[3].delete(url)
+    urlQ.put((url, depth+1))
     raise e
-    ####################################################
-  print("[Crawler End] Process[{}] Terminated".format(processId), file=sys.stderr)
+  finally:
+    managers[4].release(processId)
+  ####################################################
   terminateDriver(crawler)
-  
-def sigIntHanlder(signal, frame):
-  print("[Crawler] Process Terminated", file=sys.stderr)
-  sys.exit(0)
+  logger.info("Terminated")
 
 def terminateDriver(driver: SearchDriver):
   if driver:

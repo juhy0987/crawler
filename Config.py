@@ -4,10 +4,14 @@ import threading
 import multiprocessing
 import multiprocessing.managers
 import copy
+import logging
 
-ORIGIN_STDERR = sys.__stderr__
+from modules import CustomLogging
 
 class Config(object):
+  mainLogger = logging.getLogger("Linkbot")
+  logger = logging.getLogger("Linkbot.Config")
+  
   def __init__ (self):
     self.LogFilePath = ""
     self.PIDFilePath = ""
@@ -17,12 +21,15 @@ class Config(object):
     self.MsgLogTmpFilePath = ""
     self.URLLogFilePath = ""
     self.BackupFilePath = ""
+    
+    self.LogLevel = 0
     self.AvailRate = 0
     
     # Linkbot Work Settings
     self.ConfigLoadPeriod = 30 * 60 # seconds
     self.KeywordLoadPeriod = 30 * 60 # seconds
     self.DBUpdatePeriod = 30 * 60 # seconds
+    self.RecoveryDeadlockPeriod = 20 # seconds
     self.qEmptyTimeoutLimit = 10
     
     # Start & End Settings
@@ -68,13 +75,21 @@ class Config(object):
     # Start URLs(RunMode 0)
     self.StartURL = []
     
-    self.curLogFilePath = ""
     self.pidFlag = False
     self.updateToken = False
+    
+    self.changeList = []
+    
+    self.mainLogger.setLevel(logging.NOTSET)
+    streamHandler = logging.StreamHandler()
+    self.formatter = logging.Formatter('[%(name)s:%(funcName)s-%(processName)s][%(levelname)s] %(asctime)s - %(message)s')
+    streamHandler.setFormatter(self.formatter)
+    self.mainLogger.addHandler(streamHandler)
 
   def load(self, sFilePath):
     configFD = open(sFilePath, "rt", encoding='utf-8')
-    print("[Config Load] File Path: {}".format(sFilePath), file=sys.stderr)
+    self.logger.info("File Path: {}".format(sFilePath))
+    self.changeList.clear()
     
     while True:
       sBufIn = configFD.readline()
@@ -99,7 +114,7 @@ class Config(object):
             else:
               continue
 
-        print("[Config Load] Wrong formated string: {}".format(sBufIn), file=sys.stderr)
+        self.logger.warning("Wrong formated string: {}".format(sBufIn))
         continue
       
       if option in ["StartTime", "EndTime"]:
@@ -108,7 +123,7 @@ class Config(object):
       try:
         curValue = self.__dict__[option]
       except KeyError:
-        print("[Config Load] There's no option [{}]".format(option), file=sys.stderr)
+        self.logger.warning("[Config Load] There's no option [{}]".format(option))
         continue
       else:
         pass
@@ -125,43 +140,59 @@ class Config(object):
       elif type(curValue) == list:
         if not value in curValue:
           curValue.append(value)
+          if not option in self.changeList:
+            self.changeList.append(option)
         continue
       
       if curValue != value:
         if option == "LogFilePath":
-          if sys.stderr != sys.__stderr__:
-            sys.stderr.close()
+
+          for handler in self.mainLogger.handlers:
+            handler.close()
+            self.mainLogger.removeHandler(handler)
           
           if value == "":
-            sys.stderr = sys.__stderr__
-            self.curLogFilePath = ""
+            streamHandler = logging.StreamHandler()
+            self.mainLogger.addHandler(streamHandler)
           else:
-            sys.stderr = open(value, "at")
-            self.curLogFilePath = value
+            dir = '/'.join(value.split('/')[:-1])
+            if dir and not os.path.exists(dir):
+              os.makedirs(dir)
+
+            fileHandler = logging.FileHandler(value)
+            fileHandler.setFormatter(self.formatter)
+            self.mainLogger.addHandler(fileHandler)
+            
         elif option == "PIDFilePath":
           if self.pidFlag:
             continue
           
           if os.path.isfile(value):
-            print("[Config Load] Process is working", file=sys.__stderr__)
+            self.logger.error("Process is already working")
             sys.exit(1)
 
+          dir = '/'.join(value.split('/')[:-1])
+          if dir and not os.path.exists(dir):
+            os.makedirs(dir)
+            
           try:
-            fd = open(value, "w")
+            with open(value, "w") as fd:
+              fd.write(str(os.getpid())+'\n')
           except (FileNotFoundError,TypeError,OSError):
-            print("[Config Load] PID Path is wrong: {}".format(value), file=sys.__stderr__)
+            self.logger.error("PID Path is wrong: {}".format(value))
             sys.exit(1)
           
-          fd.write(str(os.getpid())+'\n')
-          fd.close()
-          
           self.pidFlag = True
-        
+          
+        elif option == "LogLevel":
+          if not CustomLogging.setLoggerLevel(self.mainLogger, value):
+            continue
+
         self.__dict__[option] = value
-        print("[Config changed] {}: {} > {}".format(option, curValue, value), file=sys.stderr)
+        self.changeList.append(option)
+        self.logger.info("{}: {} > {}".format(option, curValue, value))
     
-    print("[Config Load] Load Process Completed", file=sys.stderr)
-    sys.stderr = self.applyLog(sys.stderr)
+    self.logger.info("Load Process Completed")
 
   def dump(self, sConfigDumpPath):
     fd = open(sConfigDumpPath, "wt")
@@ -175,12 +206,10 @@ class Config(object):
     except FileNotFoundError:
       pass
   
-  def applyLog(self, fd):
-    if fd != sys.__stderr__:
-      fd.close()
-    if len(self.curLogFilePath) != 0:
-      fd = open(self.curLogFilePath, "at")
-    return fd
+  def getChildLogger(self, suffix):
+    return self.mainLogger.getChild(suffix)
+  
+  
 
 class ConfigMgr(multiprocessing.managers.Namespace):
   def __init__(self, sFilePath):
@@ -190,7 +219,7 @@ class ConfigMgr(multiprocessing.managers.Namespace):
     try:
       self.config.load(sFilePath)
     except (FileNotFoundError,TypeError,OSError):
-      print("[Config Init] There's no Config File [{}]".format(sFilePath), file=sys.stderr)
+      self.config.logger.error("There's no Config File [{}]".format(sFilePath))
       sys.exit(1)
     
     sys.stderr = open(self.config.LogFilePath, "at")
@@ -211,8 +240,11 @@ class ConfigMgr(multiprocessing.managers.Namespace):
     if not self.updater.is_alive():
       self.updater = threading.Thread(target=self.recovery, daemon=True)
       self.updater.start()
+      return True
+    return False
   
   def autoUpdate(self):
+    sys.stderr = CustomLogging.StreamToLogger(self.config.logger, logging.CRITICAL)
     while True:
       time.sleep(self.config.ConfigLoadPeriod)
       if self.updaterKillFlag:
@@ -222,12 +254,11 @@ class ConfigMgr(multiprocessing.managers.Namespace):
         try:
           self.config.load(self.sFilePath)
         except (FileNotFoundError,TypeError,OSError):
-          print("[Config Update] There's no Config File [{}]".format(self.sFilePath), file=sys.stderr)
-          sys.stderr = self.applyLog(sys.stderr)
+          self.config.logger.error("There's no Config File [{}]".format(self.sFilePath), file=sys.stderr)
         except Exception as e:
-          print(str(e), file=sys.stderr)
-          sys.stderr = self.applyLog(sys.stderr)
-        self.lock.release()
+          raise e
+        finally:
+          self.lock.release()
         
         self.updateFlag = True
   

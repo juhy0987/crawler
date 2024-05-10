@@ -6,11 +6,15 @@ import multiprocessing
 import multiprocessing.managers
 import copy
 import base64
+import logging
 
 from query import oracQry
 from Config import Config
-
+from modules import CustomLogging
 class Keyword(object):
+  mainLogger = logging.getLogger('Linkbot')
+  logger = logging.getLogger('Linkbot.Keyword')
+  
   def __init__ (self):
     self.keywordDicts = dict()
     
@@ -18,9 +22,8 @@ class Keyword(object):
     
   def load(self, key, query):
     oracMgr = subprocess.Popen(["python", "oracMgr.py"], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    # print(query)
     data, errMsg = oracMgr.communicate(query.encode())
-    # print(errMsg.decode(), file=sys.stderr)
+    self.logger.debug(errMsg.decode())
     conts = pickle.loads(data)
     
     if not len(conts):
@@ -64,60 +67,63 @@ class KeywordMgr(multiprocessing.managers.Namespace):
     self.keyword = Keyword()
     self.configMgr = configMgr
     self.keyword.config = configMgr.getConfig()
+    CustomLogging.setLogConfig(self.keyword.mainLogger, self.keyword.config)
     
     baseQuery = oracQry.keywordDict["base"]
     if not self.keyword.load("page", baseQuery.format(self.keyword.config.KeyGID)):
-      print("[Keyword Load] Page Keyword dict loaded", file=sys.stderr)
+      self.keyword.logger.info("Page Keyword loaded")
     if not self.keyword.load("url", baseQuery.format(self.keyword.config.URLKeyGID)):
-      print("[Keyword Load] URL Keyword dict loaded", file=sys.stderr)
-    sys.stderr = self.keyword.config.applyLog(sys.stderr)
+      self.keyword.logger.info("URL Keyword loaded")
     
     self.updaterKillFlag = False
     self.updateFlag = False
     self.conn, cConn = multiprocessing.Pipe()
-    self.updater = multiprocessing.Process(target=self.update, args=(cConn), daemon=True)
+    self.updater = multiprocessing.Process(name="Keyword", target=self.update, args=(cConn,), daemon=True)
     self.updater.start()
   
   def reviveUpdater(self):
     if not self.updater.is_alive():
       self.conn, cConn = multiprocessing.Pipe()
-      self.updater = multiprocessing.Process(target=self.update, args=(cConn), daemon=True)
+      self.updater = multiprocessing.Process(name="Keyword", target=self.update, args=(cConn,), daemon=True)
       self.updater.start()
   
   def update(self, conn):
+    sys.stderr = CustomLogging.StreamToLogger(self.keyword.logger, logging.CRITICAL)
     while True:
-      time.sleep(self.keyword.config.KeywordLoadPeriod)
-      if self.updaterKillFlag:
-        break
-      
-      try:
-        if conn.poll(0.001):
-          data = conn.recv().split()
-          match data[0]:
-            case "config":
-              match data[1]:
-                case "update":
-                  self.keyword.config = self.configMgr.getConfig()
-                  
-                  # apply changed configuration
-                  print("[Crawler] Process[{}] configuration change applied".format("judgement"), file=sys.stderr)
-                case _:
-                  pass
-            case  _:
-              pass
-      except BrokenPipeError:
-        break
+      cnt = 0
+      while cnt < self.keyword.config.KeywordLoadPeriod:
+        if self.updaterKillFlag:
+          sys.exit(0)
+        
+        try:
+          if conn.poll(0.001):
+            data = conn.recv().split()
+            match data[0]:
+              case "config":
+                match data[1]:
+                  case "update":
+                    self.keyword.config = self.configMgr.getConfig()
+                    
+                    # apply changed configuration
+                    CustomLogging.setLogConfig(self.keyword.mainLogger, self.keyword.config)
+                    self.keyword.logger.info("Configuration change applied")
+                  case _:
+                    pass
+              case  _:
+                pass
+        except BrokenPipeError:
+          sys.exit(0)
+        cnt += 1
+        time.sleep(1)
       
       baseQuery = oracQry.keywordDict["base"]
       tmpKeyword = Keyword()
       tmpKeyword.config = self.keyword.config
       
       if not tmpKeyword.load("page", baseQuery.format(self.keyword.config.KeyGID)):
-        print("[Keyword Update] Page Keyword dict loaded", file=sys.stderr)
+        self.keyword.logger.info("Page Keyword loaded")
       if not tmpKeyword.load("url", baseQuery.format(self.keyword.config.URLKeyGID)):
-        print("[Keyword Update] URL Keyword dict loaded", file=sys.stderr)
-      
-      sys.stderr = self.keyword.config.applyLog(sys.stderr)
+        self.keyword.logger.info("URL Keyword loaded")
       
       self.updateFlag = True
   
