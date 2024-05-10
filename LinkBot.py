@@ -312,8 +312,9 @@ if __name__=="__main__":
       logger.info("Revived tree updater")
       managers[1].setPid("treeMgr", managers[2].getUpdaterPID())
     if managers[3].reviveRecoverer():
-      logger.info("Revived Duplication exclude DB Recoverer")
-    # no manager process on semephore manager
+      logger.info("Revived Duplication exclude DB recoverer")
+    if managers[4].reviveReleaser():
+      logger.info("Revived Semaphore deadlock releaser")
     if managers[5].reviveUpdater():
       logger.info("Revived keyword updater")
       managers[1].setPid("keywordMgr", managers[5].getUpdaterPID())
