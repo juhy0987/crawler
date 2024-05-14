@@ -130,6 +130,31 @@ class HostSemaphoreMgr(multiprocessing.managers.Namespace):
           pass
       self.lock.release()
   
+  def showURL(self, sURL):
+    try:
+      semaphore = self.curRequest[sURL]
+    except KeyError:
+      return None
+
+    return (semaphore, [id for id, url in self.locker.items() if url == sURL])
+  
+  def showID(self, ID):
+    try:
+      return self.locker[ID]
+    except KeyError:
+      return None
+    
+  def showAll(self):
+    sURL = list(self.curRequest.keys())
+    for id, url in self.locker.items():
+      try:
+        sURL.remove(url)
+      except ValueError:
+        pass
+    
+    return [(id,url) for id, url in self.locker.items()], sURL
+    
+  
   def changeConfig(self, config):
     self.config = config
 

@@ -32,7 +32,7 @@ class Keyword(object):
     tmpDict = dict()
     for keyNo, weight, keyHex in conts:
       try:
-        keyword = base64.b64decode(keyHex)
+        keyword = base64.b64decode(keyHex).decode()
       except ValueError:
         continue
       
@@ -62,6 +62,17 @@ class Keyword(object):
     
     return weight
 
+  def lookup(self, key):
+    result = []
+    for dictKey, curDict in self.keywordDicts.items():
+      try:
+        weight = curDict[key]
+      except KeyError:
+        pass
+      else:
+        result.append((dictKey, weight))
+    return result
+
 class KeywordMgr(multiprocessing.managers.Namespace):
   def __init__ (self, configMgr):
     self.keyword = Keyword()
@@ -78,16 +89,16 @@ class KeywordMgr(multiprocessing.managers.Namespace):
     self.updaterKillFlag = False
     self.updateFlag = False
     self.conn, cConn = multiprocessing.Pipe()
-    self.updater = multiprocessing.Process(name="Keyword", target=self.update, args=(cConn,), daemon=True)
+    self.updater = multiprocessing.Process(name="Keyword", target=self.autoUpdate, args=(cConn,), daemon=True)
     self.updater.start()
   
   def reviveUpdater(self):
     if not self.updater.is_alive():
       self.conn, cConn = multiprocessing.Pipe()
-      self.updater = multiprocessing.Process(name="Keyword", target=self.update, args=(cConn,), daemon=True)
+      self.updater = multiprocessing.Process(name="Keyword", target=self.autoUpdate, args=(cConn,), daemon=True)
       self.updater.start()
   
-  def update(self, conn):
+  def autoUpdate(self, conn):
     sys.stderr = CustomLogging.StreamToLogger(self.keyword.logger, logging.CRITICAL)
     while True:
       cnt = 0
@@ -127,6 +138,18 @@ class KeywordMgr(multiprocessing.managers.Namespace):
       
       self.updateFlag = True
   
+  def update(self):
+    baseQuery = oracQry.keywordDict["base"]
+    tmpKeyword = Keyword()
+    tmpKeyword.config = self.keyword.config
+    
+    if not tmpKeyword.load("page", baseQuery.format(self.keyword.config.KeyGID)):
+      self.keyword.logger.info("Page Keyword loaded")
+    if not tmpKeyword.load("url", baseQuery.format(self.keyword.config.URLKeyGID)):
+      self.keyword.logger.info("URL Keyword loaded")
+    
+    self.updateFlag = True
+  
   def getUpdaterPID(self):
     if self.updater.is_alive():
       return self.updater.pid
@@ -143,6 +166,9 @@ class KeywordMgr(multiprocessing.managers.Namespace):
 
   def setUpdateFlag(self, value):
     self.updateFlag = value
+  
+  def get(self, keyword):
+    return self.keyword.lookup(keyword)
   
 if __name__=="__main__":
   import os

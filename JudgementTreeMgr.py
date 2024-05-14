@@ -33,6 +33,13 @@ class JudgementTree(object):
         return 0
     return -1
   
+  def lookupDetail(self, sURL):
+    result = []
+    for key in self.treeDict.keys():
+      if not self.treeDict[key].lookupURL(sURL):
+        result.append(key)
+    return result
+  
   def updateAll(self):
     cnt = 0
     for key in self.queryDict.keys():
@@ -44,7 +51,11 @@ class JudgementTree(object):
   
   def update(self, key):
     oracMgr = subprocess.Popen(["python", "oracMgr.py"], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    data, errMsg = oracMgr.communicate(self.queryDict[key][0].encode())
+    try:
+      data, errMsg = oracMgr.communicate(self.queryDict[key][0].encode())
+    except KeyError:
+      oracMgr.terminate()
+      return -1
     # print(errMsg.decode(), file=sys.stderr)
     conts = pickle.loads(data)
     
@@ -91,13 +102,16 @@ class JudgementTreeMgr(multiprocessing.managers.Namespace):
       return -1
     return 0
   
+  def lookupDetail(self, sURL):
+    return self.judgementTree.lookupDetail(sURL)
+  
   def reviveUpdater(self):
     if not self.updater.is_alive():
       self.conn, cConn = multiprocessing.Pipe()
-      self.updater = multiprocessing.Process(target=self.update, args=(cConn,), daemon=True)
+      self.updater = multiprocessing.Process(target=self.autoUpdate, args=(cConn,), daemon=True)
       self.updater.start()
   
-  def update(self, conn):
+  def autoUpdate(self, conn):
     sys.stderr = CustomLogging.StreamToLogger(self.judgementTree.logger, logging.CRITICAL)
     while True:
       cnt = 0
@@ -127,7 +141,13 @@ class JudgementTreeMgr(multiprocessing.managers.Namespace):
         time.sleep(1)
       
       self.judgementTree.updateAll()
-      
+  
+  def updateAll(self):
+    return self.judgementTree.updateAll()
+  
+  def update(self, key):
+    return self.judgementTree.update(key)
+    
   def getUpdaterPID(self):
     if self.updater.is_alive():
       return self.updater.pid

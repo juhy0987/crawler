@@ -4,7 +4,8 @@ class ProcessMgr(object):
   def __init__ (self, maxProcess=0):
     self.children = dict()
     self.pipes = dict()
-    self.psNum = [ False ] * maxProcess
+    self.lifeCnt = [ 0 ] * 128
+    self.psNum = [ False ] * 128
     self.maxProcess = maxProcess
 
   def addProcess(self, target, args):
@@ -25,6 +26,7 @@ class ProcessMgr(object):
     self.children[id] = newProcess
     self.pipes[id] = parentConn
     newProcess.start()
+    self.initCnt(id)
     return id
 
   def getProcess(self, id):
@@ -58,6 +60,26 @@ class ProcessMgr(object):
     else:
       self.psNum[id] = False
   
+  def initCnt(self, id):
+    try:
+      self.lifeCnt[id] = 0
+    except KeyError:
+      return False
+    return True
+  
+  def increaseCnt(self, id):
+    try:
+      self.lifeCnt[id] += 1
+    except KeyError:
+      return False
+    return True
+  
+  def getLifeCnt(self, id):
+    try:
+      return self.lifeCnt[id]
+    except KeyError:
+      return None
+      
   def setUnusedNum(self, id):
     self.psNum[id] = False
   
@@ -70,3 +92,38 @@ class ProcessMgr(object):
 
   def setMaxProcess(self, num):
     self.maxProcess = num
+  
+  def getProcessNum(self):
+    return len(self.children)
+  
+  def showProcess(self, id):
+    try:
+      child = self.children[id]
+    except KeyError:
+      return None
+    
+    return self.isProcessAlive(id)
+  
+  def showProcesses(self, flag):
+    if flag == 'all':
+      children = self.children.keys()
+    elif flag == 'alive':
+      children = [child for child in self.children.keys() if self.isProcessAlive(child)]
+    elif flag == 'dead':
+      children = [child for child in self.children.keys() if not self.isProcessAlive(child)]
+    else:
+      print("Wrong Format")
+      return False
+    
+    print("Children Processes", flag)
+    if flag == 'all':
+      for child in children:
+        if self.isProcessAlive(child):
+          status = 'alive'
+        else:
+          status = 'dead'
+        print("ID: {} - {}".format(child, status))
+    else:
+      print(children)
+    return True
+    

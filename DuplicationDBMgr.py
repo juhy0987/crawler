@@ -101,7 +101,7 @@ class DuplicationDB(object):
     return insertedTime
   
   def insert(self, sURL, insertTime):
-    if self.isRedisWork and len(self.lru) >= self.MaxDBCache:
+    while self.isRedisWork and len(self.lru) >= self.MaxDBCache:
       self.updateRedis()
       
     self.lru.insert(0, sURL)
@@ -222,7 +222,11 @@ class DuplicationDBMgr(multiprocessing.managers.Namespace):
           pass
   
   def delete(self, sURL):
-    return self.db.delete(sURL)
+    if self.lock.acquire(block=True):
+      try:
+        return self.db.delete(sURL)
+      finally:
+        self.lock.release()
   
   def storeDBbeforeExit(self):
     self.recoveryKillFlag = True

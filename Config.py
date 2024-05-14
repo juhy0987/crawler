@@ -31,6 +31,7 @@ class Config(object):
     self.DBUpdatePeriod = 30 * 60 # seconds
     self.RecoveryDeadlockPeriod = 20 # seconds
     self.qEmptyTimeoutLimit = 10
+    self.PageLoadTimeoutLimit = 1.5 # seconds
     
     # Start & End Settings
     self.MaxLogCount = 0
@@ -246,9 +247,13 @@ class ConfigMgr(multiprocessing.managers.Namespace):
   def autoUpdate(self):
     sys.stderr = CustomLogging.StreamToLogger(self.config.logger, logging.CRITICAL)
     while True:
-      time.sleep(self.config.ConfigLoadPeriod)
-      if self.updaterKillFlag:
-        break
+      cnt = 0
+      while cnt < self.config.ConfigLoadPeriod:
+        if self.updaterKillFlag:
+          sys.exit(0)
+        
+        cnt += 1
+        time.sleep(1)
       
       if self.lock.acquire(block=True, timeout=10):
         try:
@@ -262,10 +267,25 @@ class ConfigMgr(multiprocessing.managers.Namespace):
         
         self.updateFlag = True
   
-  def manualUpdate(self):
-    pass
+  def update(self):
+    if self.lock.acquire(block=True, timeout=10):
+      try:
+        self.config.load(self.sFilePath)
+      except (FileNotFoundError,TypeError,OSError):
+        print("There's no Config File [{}]".format(self.sFilePath))
+      except Exception as e:
+        raise e
+      finally:
+        self.lock.release()
+      
+      self.updateFlag = True
   
-  
+  def get(self, option):
+    try:
+      return self.config.__dict__[option]
+    except KeyError:
+      return None
+    
   def dump(self, sConfigDumpPath):
     self.updaterKillFlag = True
     self.config.dump(sConfigDumpPath)
