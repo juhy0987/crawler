@@ -76,19 +76,23 @@ def initialize():
 
 if __name__ == "__main__":
   crawler = SearchDriver()
-  try:
-    crawler.get("https://www.youtube.com/watch?t=5615&v=0_5NSM54cEc&feature=youtu.be")
-  except selenium.common.exceptions.WebDriverException as e:
-    if "net::ERR_CONNECTION_TIMED_OUT" in e.msg:
-      sys.exit(1)
-    else:
-      print(str(e), file=sys.stderr)
-      sys.exit(1)
+  crawler.quit()
+  a = getattr(crawler.service, 'is_connectable', lambda:False)
+  print(a)
+  crawler.quit()
+  # try:
+  #   crawler.get("https://www.youtube.com/watch?t=5615&v=0_5NSM54cEc&feature=youtu.be")
+  # except selenium.common.exceptions.WebDriverException as e:
+  #   if "net::ERR_CONNECTION_TIMED_OUT" in e.msg:
+  #     sys.exit(1)
+  #   else:
+  #     print(str(e), file=sys.stderr)
+  #     sys.exit(1)
   
   
-  # lLink = crawler.find_elements(By.TAG_NAME, "a")
-  soup = BeautifulSoup(crawler.page_source, "html.parser")
-  lLink = soup.select('a')
-  for link in lLink:
-    print(link['href'])
-  crawler.close()
+  # # lLink = crawler.find_elements(By.TAG_NAME, "a")
+  # soup = BeautifulSoup(crawler.page_source, "html.parser")
+  # lLink = soup.select('a')
+  # for link in lLink:
+  #   print(link['href'])
+  # crawler.close()
