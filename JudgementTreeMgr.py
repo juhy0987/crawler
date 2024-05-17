@@ -111,6 +111,9 @@ class JudgementTreeMgr(multiprocessing.managers.Namespace):
       self.updater = multiprocessing.Process(target=self.autoUpdate, args=(cConn,), daemon=True)
       self.updater.start()
   
+  def killUpdater(self):
+    self.updaterKillFlag = True
+  
   def autoUpdate(self, conn):
     sys.stderr = CustomLogging.StreamToLogger(self.judgementTree.logger, logging.CRITICAL)
     while True:
@@ -120,7 +123,7 @@ class JudgementTreeMgr(multiprocessing.managers.Namespace):
           sys.exit(0)
           
         try:
-          if conn.poll(0.001):
+          if conn.poll(0):
             data = conn.recv().split()
             match data[0]:
               case "config":

@@ -10,6 +10,7 @@ import signal
 import logging
 import queue
 import select
+import psutil
 
 import lib
 from Config import ConfigMgr
@@ -17,7 +18,7 @@ from JudgementTreeMgr import JudgementTreeMgr
 from DuplicationDBMgr import DuplicationDBMgr
 from HostSemephoreMgr import HostSemaphoreMgr
 from KeywordMgr import KeywordMgr
-from lib.process import writerProcess, console
+from lib.process import writerProcess, showInfo
 from modules import CustomLogging
 
 CONFIGPATH = "./config/linkbot.conf"
@@ -34,15 +35,16 @@ MyManager.register("HostSemaphoreMgr", HostSemaphoreMgr)
 MyManager.register("CrawlerPIDMgr", lib.CrawlerPIDMgr)
 MyManager.register("KeywordMgr", KeywordMgr)
 
-def manageProcess(logger, managers, processMgr, urlQ, writerQ, config):
+def manageProcess(logger, managers, commands, processMgr, urlQ, writerQ, config):
   toWriterConn, writerConn = multiprocessing.Pipe()
   writer = multiprocessing.Process(name="Writer",
                                    target=writerProcess,
                                    args=("Writer", writerConn, managers[0], writerQ),
                                    daemon=True)
   writer.start()
+  managers[1].setPid("Writer", writer.pid)
   
-  isSigInt = False
+  sigInt = False
   cnt = 0
   try:
     while cnt < 5:
@@ -51,32 +53,48 @@ def manageProcess(logger, managers, processMgr, urlQ, writerQ, config):
         
         match cmd[0]:
           case "x":
-            isSigInt = True
+            sigInt = True
             break
           case _:
             pass
       deadlist = []
       for id in processMgr.children.keys():
-        pipe = processMgr.getPipe(id)
-        try:
-          if pipe.poll(0.001):
-            data = conn.recv()
-            
-            if data == "l":
-              processMgr.initCnt(id)
-          else:
-            processMgr.increaseCnt(id)
-        except BrokenPipeError:
+        if not processMgr.checkProcess(id):
           deadlist.append(id)
           continue
         
-        if processMgr.getLifeCnt(id) > 15:
-          os.kill(processMgr.getProcess(id).pid, signal.SINGINT)
+        if processMgr.getLifeCnt(id) > 20:
+          pid = processMgr.getProcess(id).pid
+          if not processMgr.softKill[id]:
+            logger.warning("exit signal to child {}".format(id))
+            os.kill(pid, signal.SIGINT)
+            processMgr.softKill[id] = True
+          else:
+            logger.warning("kill child {}".format(id))
+            
+            if sys.platform == 'win32':
+              p = subprocess.Popen(["taskkill", "/pid", str(pid), "/t", "/f"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            elif sys.platform == 'linux':
+              p = subprocess.Popen(["kill", "-9", str(pid)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+          processMgr.initCnt(id)
         
         if not processMgr.isProcessAlive(id):
           deadlist.append(id)
       for id in deadlist:
+        p = processMgr.getProcess(id)
+        p.terminate()
+        p.join()
+        
         processMgr.delProcess(id)
+        curFDList = lib.getFDList()
+        for fType, fNum in processMgr.usedFD[id]:
+          for fd, path in curFDList.items():
+            if (fType, fNum) == path:
+              try:
+                os.close(fd)
+              except OSError:
+                pass
         processMgr.setUnusedNum(id)
         
         pid = managers[1].getPid(id)
@@ -84,20 +102,30 @@ def manageProcess(logger, managers, processMgr, urlQ, writerQ, config):
           continue
         
         if sys.platform == 'win32':
-          p = subprocess.Popen(["taskkill", "/pid", str(pid), "/t", "/f"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+          p = subprocess.Popen(["taskkill", "/pid", str(pid), "/t", "/f"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         elif sys.platform == 'linux':
-          p = subprocess.Popen(["pkill", "-9", "-P", str(pid)], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+          p = subprocess.Popen(["pkill", "-9", "-P", str(pid)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         else:
           continue
-        output, err = p.communicate()
+      
+      p = subprocess.Popen(["ps", "-ef", "|", "grep", "'LinkBot.py'"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+      output, _ = p.communicate()
+      for line in output:
+        try:
+          val = line.split()
+          if val[2] == "1":
+            p = subprocess.Popen(["kill", "-9", val[1]], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except:
+          pass
       
       if not writer.is_alive():
         toWriterConn, writerConn = multiprocessing.Pipe()
         writer = multiprocessing.Process(name="Writer",
                                     target=writerProcess,
-                                    args=("writer", writerConn, managers[0], writerQ),
+                                    args=("Writer", writerConn, managers[0], writerQ),
                                     daemon=True)
         writer.start()
+        managers[1].setPid("Writer", writer.pid)
         logger.info("Revived writer")
       
       if managers[0].reviveUpdater():
@@ -141,21 +169,19 @@ def manageProcess(logger, managers, processMgr, urlQ, writerQ, config):
         cnt += 1
       else:
         cnt = 0
-      time.sleep(1)
+      time.sleep(3)
   except KeyboardInterrupt:
-    isSigInt = True
-  except Exception as e:
+    sigInt = True
     pass
-  finally:
-    if writer.is_alive():
-      writer.terminate()
+  except Exception as e:
+    raise e
+    pass
   
-  
-  print("@@@@@")
-  if not isSigInt:
+  if not sigInt:
     os.kill(os.getpid(), signal.SIGINT)
   
-  print("!!!!!")
+  print("end manageProcess")
+  sys.exit(0)
 
 def getStartURL(managers, urlQ, config):
   if os.path.isfile(config.BackupFilePath):
@@ -192,8 +218,180 @@ def getStartURL(managers, urlQ, config):
         urlQ.put((url, 0))
     managers[3].clear()
 
+def console(commands, managers, processMgr, urlQ, args):
+  p = threading.Thread(name="management", target=manageProcess, args=args, daemon=True)
+  p.start()
+  
+  flag = True
+  while True:
+    try:
+      if flag:
+        cmd = input("Linkbot >>> ")
+        if not cmd:
+          continue
+        
+        cmd = cmd.split()
+        match cmd[0].lower():
+          case letter if letter in ("exit", "x"):
+            break
+          
+          case letter if letter in ("queue", "q"):
+            print("queue size: {}".format(urlQ.qsize()))
+            
+          case letter if letter in ("config", "c"):
+            match cmd[1].lower():
+              case letter if letter in ("update", "u"):
+                managers[0].update()
+              case letter if letter in ("get", "g"):
+                result = managers[0].get(cmd[2])
+                if result is None:
+                  print("No configuration option named [{}]".format(cmd[2]))
+                else:
+                  print("{}: {}".format(cmd[2], result))
+              case _:
+                showInfo()
+                
+          case letter if letter in ("tree", "t"):
+            match cmd[1].lower():
+              case letter if letter in ("update", "u"):
+                try:
+                  if not managers[2].update(cmd[2]):
+                    print("Update Successful")
+                  else:
+                    print("Update Failed")
+                except IndexError:
+                  managers[2].updateAll()
+              case letter if letter in ("lookup", "l"):
+                result = managers[2].lookupDetail(cmd[2])
+                if not result:
+                  print("No matched")
+                else:
+                  print("Matched DBs:", result)
+              case _:
+                showInfo()
+                
+          case letter if letter in ("duplicate", "d"):
+            if managers[3].lookup(cmd[1]):
+              print('Passed')
+            else:
+              print('Not Passed')
+              
+          case letter if letter in ("lock", "l"):
+            match cmd[1].lower():
+              case letter if letter in ("url", "u"):
+                result = managers[4].showURL(cmd[2])
+                if not result:
+                  print("No work for URL: [{}]".format(cmd[2]))
+                else:
+                  print("Currently using process:", result[1])
+                  print("Left semaphore: {}".format(result[0]))
+              case letter if letter in ("id", "i"):
+                print("ID: {} - {}".format(cmd[2], managers[4].showID(int(cmd[2]))))
+              case letter if letter in ("all", "a"):
+                locker, left = managers[4].showAll()
+                locker.sort()
+                print("######### Locker #########")
+                for id, url in locker:
+                  print("ID: {} - {}".format(id, url))
+                
+                if left:
+                  print("\n##### useless semaphore #####")
+                  for url in left:
+                    print(url)
+              case _:
+                showInfo()
+              
+          case letter if letter in ("keyword", "k"):
+            match cmd[1].lower():
+              case letter if letter in ("update", "u"):
+                managers[5].update()
+              case letter if letter in ("get", "g"):
+                result = managers[5].get(cmd[2])
+                if not result:
+                  print("No matched keyword: {}".format(cmd[2]))
+                  continue
+                for key, weight in result:
+                  print("Category type: {}, Weight: {}".format(key, weight))
+              case _:
+                showInfo()
+                
+          case letter if letter in ("process", "p"):
+            match cmd[1].lower():
+              case letter if letter in ("check", "c"):
+                status = processMgr.showProcess(int(cmd[2]))
+                if status is None:
+                  print("ID: {} - Not allocated".format(cmd[2]))
+                elif status:
+                  print("ID: {} - alive({})".format(cmd[2], status[1]))
+                else:
+                  print("ID: {} - dead".format(cmd[2]))
+              case letter if letter in ("show", "s"):
+                try:
+                  if not processMgr.showProcesses(cmd[2].lower()):
+                    showInfo()
+                except IndexError:
+                  processMgr.showProcesses('all')
+              case letter if letter in ("kill", "k"):
+                match cmd[2].lower():
+                  case "error":
+                    pass
+                  case "soft":
+                    p = processMgr.getProcess(int(cmd[3]))
+                    if p:
+                      os.kill(p.pid, signal.SIGINT)
+                    else:
+                      print("No process :", cmd[3])
+                  case "hard":
+                    p = processMgr.getProcess(int(cmd[3]))
+                    if p:
+                      if sys.platform == 'win32':
+                        p = subprocess.Popen(["taskkill", "/pid", str(p.pid), "/t", "/f"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                      elif sys.platform == 'linux':
+                        p = subprocess.Popen(["pkill", "-9", "-P", str(p.pid)], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                      else:
+                        print("Not predefined OS")
+                    else:
+                      print("No process :", cmd[3])
+                  case _:
+                    showInfo()
+              case letter if letter in ("number", "n"):
+                print("Number of processes: {}".format(processMgr.getProcessNum()))
+          
+          case letter if letter in ("insert", "i"):
+            urlQ.put(cmd[1])
+          
+          case letter if letter in ("help", "h"):
+            showInfo()
+            
+          case _:
+            showInfo()
+      else:
+        time.sleep(5)
+      
+      
+      if not p.is_alive():
+        print("\n\n<<< Management Process Dead >>> revive the Management Process\n\n")
+        p = threading.Thread(name="management", target=manageProcess, args=args, daemon=True)
+        p.start()
+    except KeyboardInterrupt:
+      break
+    except (EOFError, OSError):
+      print("Background mode")
+      flag = False
+    except (IndexError, ValueError):
+      showInfo()
+  
+  commands.put("x")
+  for id, child in processMgr.children.items():
+    try:
+      os.kill(child.pid, signal.SIGINT)
+    except ProcessLookupError:
+      pass
+  
+  print("end console")
+
 def initConfig(manager):
-  configMgr = manager.ConfigMgr(CONFIGPATH)
+  configMgr = manager.ConfigMgr(CONFIGPATH, os.getpid())
   return configMgr
 
 def initJudgementTree(manager, configMgr):
@@ -239,9 +437,16 @@ def runMode3(config):
 
 # ----------------- Emergency Handler ---------------- #
 
-def emergencyProcessKill(crawlerPIDMgr):
+def emergencyProcessKill(managers):
+  print("@@@@")
+  managers[0].killUpdater()
+  managers[2].killUpdater()
+  managers[3].killRecoverer()
+  managers[4].killReleaser()
+  managers[5].killUpdater()
+  print("!!!!")
   time.sleep(5)
-  pidDict = crawlerPIDMgr.getPidDict()
+  pidDict = managers[1].getPidDict()
   for key, pid in pidDict.items():
     if sys.platform == 'win32':
       p = subprocess.Popen(["taskkill", "/pid", str(pid), "/t", "/f"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -260,11 +465,14 @@ def emergencyProcessKill(crawlerPIDMgr):
     p = subprocess.Popen(["killall", "-9", "chromedriver"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     p = subprocess.Popen(["killall", "-9", "chrome"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
   output, err = p.communicate()
+
   print("Linkbot killed children")
+  
   # p = subprocess.Popen(["taskkill", "/t", "/f", "/im", "chrome.exe"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
   # output, err = p.communicate()
   
 def emergencyQBackup(q, BackupFilePath):
+  print("^^^^^^")
   backupList = []
   while not q.empty():
     backupList.append(q.get())
@@ -279,8 +487,10 @@ def emergencyQBackup(q, BackupFilePath):
         pickle.dump(backupList, fd)
     except (FileNotFoundError, TypeError, OSError):
       pass
+  print("&&&&&")
 
 def emergencyQWrite(q, URLLogFilePath):
+  print("#####")
   dir = '/'.join(URLLogFilePath.split('/')[:-1])
   if dir and not os.path.exists(dir):
     os.makedirs(dir)
@@ -291,6 +501,8 @@ def emergencyQWrite(q, URLLogFilePath):
         fd.write(q.get() + '\n')
   except (FileNotFoundError, TypeError, OSError):
     pass
+
+  print("$$$$$$")
 
 # --------------- Emergency Handler End ---------------- #
 
@@ -321,7 +533,8 @@ if __name__=="__main__":
   
   # Process Killer Initiate
   managers.append(manager.CrawlerPIDMgr())
-  atexit.register(emergencyProcessKill, managers[1])
+  atexit.register(emergencyProcessKill, managers)
+  managers[1].setPid("manager", managers[0].getManagerPID())
   
   # Judge DB Initiate
   managers.append(initJudgementTree(manager, managers[0])) # [2]: Tree
@@ -348,8 +561,5 @@ if __name__=="__main__":
   # Process Start
   processMgr = lib.ProcessMgr(config.MaxProcess)
   getStartURL(managers, urlQ, config)
-  p = threading.Thread(name="management", target=manageProcess, args=(logger, managers, processMgr, urlQ, writerQ, config), daemon=True)
-  p.start()
-  console(commands, managers, processMgr, urlQ)
-  
+  console(commands, managers, processMgr, urlQ, (logger, managers, commands, processMgr, urlQ, writerQ, config))
   print("Linkbot Terminated")

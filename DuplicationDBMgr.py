@@ -197,6 +197,9 @@ class DuplicationDBMgr(multiprocessing.managers.Namespace):
       self.recoverer = threading.Thread(target=self.recovery, daemon=True)
       self.recoverer.start()
   
+  def killRecoverer(self):
+    self.recoveryKillFlag = True
+  
   def recovery(self):
     sys.stderr = CustomLogging.StreamToLogger(self.db.logger, logging.CRITICAL)
     while True:
