@@ -13,6 +13,8 @@ class Config(object):
   logger = logging.getLogger("Linkbot.Config")
   
   def __init__ (self):
+    self.pid = -1
+    
     self.LogFilePath = ""
     self.PIDFilePath = ""
     self.URLSignFilePath = ""
@@ -178,7 +180,7 @@ class Config(object):
             
           try:
             with open(value, "w") as fd:
-              fd.write(str(os.getpid())+'\n')
+              fd.write(str(self.pid)+'\n')
           except (FileNotFoundError,TypeError,OSError):
             self.logger.error("PID Path is wrong: {}".format(value))
             sys.exit(1)
@@ -213,10 +215,12 @@ class Config(object):
   
 
 class ConfigMgr(multiprocessing.managers.Namespace):
-  def __init__(self, sFilePath):
+  def __init__(self, sFilePath, pid):
     super().__init__()
     self.config = Config()
     self.sFilePath = sFilePath
+    
+    self.config.pid = pid
     try:
       self.config.load(sFilePath)
     except (FileNotFoundError,TypeError,OSError):
@@ -243,6 +247,9 @@ class ConfigMgr(multiprocessing.managers.Namespace):
       self.updater.start()
       return True
     return False
+  
+  def killUpdater(self):
+    self.updaterKillFlag = True
   
   def autoUpdate(self):
     sys.stderr = CustomLogging.StreamToLogger(self.config.logger, logging.CRITICAL)
@@ -298,6 +305,9 @@ class ConfigMgr(multiprocessing.managers.Namespace):
 
   def setUpdateFlag(self, value):
     self.updateFlag = value
+    
+  def getManagerPID(self):
+    return os.getpid()
 
 if __name__=="__main__":
   configMgr = ConfigMgr("./config/linkbot.conf")

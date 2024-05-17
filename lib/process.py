@@ -1,7 +1,6 @@
 import sys, os
 import time
-import atexit
-import threading
+import subprocess
 import multiprocessing
 import signal
 import logging
@@ -36,30 +35,30 @@ class CrawlerPIDMgr(multiprocessing.managers.Namespace):
   def getPidDict(self):
     return self.pid
 
-def process (processId, chiefMgrConn, managers, urlQ, writerQ):
+def process (processId, chiefMgrConn, ping, managers, urlQ, writerQ):
   if not chiefMgrConn:
     raise BaseException
   
-  qEmptyTimeoutCnt = 0
-  mainLogger = logging.getLogger('Linkbot')
-  logger = logging.getLogger('Linkbot.Crawler')
-  sys.stderr = CustomLogging.StreamToLogger(logger, logging.CRITICAL)
-  config = managers[0].getConfig()
-  keyword = managers[5].getKeyword()
-  
-  CustomLogging.setLogConfig(mainLogger, config)
-  
-  crawler = SearchDriver()
-  managers[1].setPid(processId, crawler.service.process.pid)
-  wait = WebDriverWait(crawler, timeout=0.1)
-  
-  # debug
-  logger.info("Initiated")
-  cnt = 0
   try:
+    qEmptyTimeoutCnt = 0
+    mainLogger = logging.getLogger('Linkbot')
+    logger = logging.getLogger('Linkbot.Crawler')
+    sys.stderr = CustomLogging.StreamToLogger(logger, logging.CRITICAL)
+    config = managers[0].getConfig()
+    keyword = managers[5].getKeyword()
+    
+    CustomLogging.setLogConfig(mainLogger, config)
+    
+    crawler = SearchDriver()
+    managers[1].setPid(processId, crawler.service.process.pid)
+    wait = WebDriverWait(crawler, timeout=0.1)
+    
+    # debug
+    logger.info("Initiated")
+    cnt = 0
     while cnt < 500 and qEmptyTimeoutCnt < config.qEmptyTimeoutLimit:
       # config control
-      if chiefMgrConn.poll(0.001):
+      if chiefMgrConn.poll(0):
         data = chiefMgrConn.recv().split()
         match data[0]:
           case "config":
@@ -84,8 +83,10 @@ def process (processId, chiefMgrConn, managers, urlQ, writerQ):
           
           case _:
             pass
-    
-      
+            
+      if not ping.poll(0):
+        ping.send("l")
+
       if urlQ.empty():
         qEmptyTimeoutCnt += 1
         time.sleep(1)
@@ -187,16 +188,6 @@ def process (processId, chiefMgrConn, managers, urlQ, writerQ):
       finally:
         managers[4].release(processId)
       
-      sHost = URL.getProtocolHost(url)
-      ############### Weights Calculation ################
-      try:
-        wait.until(EC.presence_of_all_elements_located((By.TAG_NAME, "a")))
-      except selenium.common.exceptions.TimeoutException:
-        pass
-      
-      page = crawler.page_source
-      soup = BeautifulSoup(page, "html.parser")
-      
       windowHandles = crawler.window_handles
       if len(windowHandles) > 1:
         for handle in windowHandles[1:]:
@@ -204,6 +195,18 @@ def process (processId, chiefMgrConn, managers, urlQ, writerQ):
           crawler.close()
         
         crawler.switch_to.window(windowHandles[0])
+      
+      sHost = URL.getProtocolHost(url)
+      ############### Weights Calculation ################
+      try:
+        wait.until(EC.presence_of_all_elements_located((By.TAG_NAME, "a")))
+      except selenium.common.exceptions.UnexpectedAlertPresentException:
+        continue
+      except selenium.common.exceptions.TimeoutException:
+        pass
+      
+      page = crawler.page_source
+      soup = BeautifulSoup(page, "html.parser")
       
       if depth > 0 or config.CheckZeroDepth:
         writerQ.put(url)
@@ -256,19 +259,33 @@ def process (processId, chiefMgrConn, managers, urlQ, writerQ):
   except Exception as e:
     logger.critical("Unhandled Error: {}".format(url))
     managers[3].delete(url)
-    urlQ.put((url, depth+1))
+    urlQ.put((url, depth))
     raise e
   finally:
     managers[4].release(processId)
     logger.debug("After release: {}".format(processId))
-    terminateDriver(crawler)
     try:
-      os.kill(crawler.service.process.pid, signal.SIGINT)
+      chiefMgrConn.close()
     except:
       pass
+    try:
+      ping.close()
+    except:
+      pass
+    try:
+      crawler.service.process.terminate()
+      pid = crawler.service.process.pid
+      if sys.platform == 'win32':
+        p = subprocess.Popen(["taskkill", "/pid", str(pid), "/t", "/f"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+      elif sys.platform == 'linux':
+        p = subprocess.Popen(["pkill", "-9", "-P", str(pid)], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    except:
+      pass
+    sys.stderr = CustomLogging.StreamToLogger(logger, logging.DEBUG)
   ####################################################
   
   logger.info("Terminated")
+  
   sys.exit(0)
   
 def writerProcess(id, chiefConn, configMgr, q):
@@ -341,6 +358,10 @@ queue(q): return current queue size
 process(p)
 - check(c) 'ID': show if process 'ID' is alive, if no such ID return None
 - show(s) ['alive', 'dead', 'all'(default)]: 
+- kill(k) ['error', 'soft', 'hard'] 'ID': kill process 'ID'
+  'error': By Exception
+  'soft': By Keyboard Interrupt Signal
+  'hard': Immediate 
 - number(n): show currently running processes
 
 insert(i) 'URL': insert 'URL' to start URL Q
@@ -348,135 +369,7 @@ insert(i) 'URL': insert 'URL' to start URL Q
 exit(x)
 : Terminate the Linkbot""")
 
-
-def console(commands, managers, processMgr, urlQ):
-  while True:
-    try:
-      cmd = input("Linkbot >>> ")
-      if not cmd:
-        continue
-      
-      cmd = cmd.split()
-      match cmd[0].lower():
-        case letter if letter in ("exit", "x"):
-          commands.put("x")
-          for id, child in processMgr.children.items():
-            os.kill(child.pid, signal.SIGINT)
-          break
-        
-        case letter if letter in ("queue", "q"):
-          print("queue size: {}".format(urlQ.qsize()))
-          
-        case letter if letter in ("config", "c"):
-          match cmd[1].lower():
-            case letter if letter in ("update", "u"):
-              managers[0].update()
-            case letter if letter in ("get", "g"):
-              result = managers[0].get(cmd[2])
-              if result is None:
-                print("No configuration option named [{}]".format(cmd[2]))
-              else:
-                print("{}: {}".format(cmd[2], result))
-            case _:
-              showInfo()
-              
-        case letter if letter in ("tree", "t"):
-          match cmd[1].lower():
-            case letter if letter in ("update", "u"):
-              try:
-                if not managers[2].update(cmd[2]):
-                  print("Update Successful")
-                else:
-                  print("Update Failed")
-              except IndexError:
-                managers[2].updateAll()
-            case letter if letter in ("lookup", "l"):
-              result = managers[2].lookupDetail(cmd[2])
-              if not result:
-                print("No matched")
-              else:
-                print("Matched DBs:", result)
-            case _:
-              showInfo()
-              
-        case letter if letter in ("duplicate", "d"):
-          if managers[3].lookup(cmd[1]):
-            print('Passed')
-          else:
-            print('Not Passed')
-            
-        case letter if letter in ("lock", "l"):
-          match cmd[1].lower():
-            case letter if letter in ("url", "u"):
-              result = managers[4].showURL(cmd[2])
-              if not result:
-                print("No work for URL: [{}]".format(cmd[2]))
-              else:
-                print("Currently using process:", result[1])
-                print("Left semaphore: {}".format(result[0]))
-            case letter if letter in ("id", "i"):
-              print("ID: {} - {}".format(cmd[2], managers[4].showID(int(cmd[2]))))
-            case letter if letter in ("all", "a"):
-              locker, left = managers[4].showAll()
-              print("######### Locker #########")
-              for id, url in locker:
-                print("ID: {} - {}".format(id, url))
-              
-              if left:
-                print("\n##### useless semaphore #####")
-                for url in left:
-                  print(url)
-            case _:
-              showInfo()
-            
-        case letter if letter in ("keyword", "k"):
-          match cmd[1].lower():
-            case letter if letter in ("update", "u"):
-              managers[5].update()
-            case letter if letter in ("get", "g"):
-              result = managers[5].get(cmd[2])
-              if not result:
-                print("No matched keyword: {}".format(cmd[2]))
-                continue
-              for key, weight in result:
-                print("Category type: {}, Weight: {}".format(key, weight))
-            case _:
-              showInfo()
-              
-        case letter if letter in ("process", "p"):
-          match cmd[1].lower():
-            case letter if letter in ("check", "c"):
-              status = processMgr.showProcess(int(cmd[2]))
-              if status is None:
-                print("ID: {} - Not allocated".format(cmd[2]))
-              elif status:
-                print("ID: {} - alive".format(cmd[2]))
-              else:
-                print("ID: {} - dead".format(cmd[2]))
-            case letter if letter in ("show", "s"):
-              try:
-                if not processMgr.showProcesses(cmd[2].lower()):
-                  showInfo()
-              except IndexError:
-                processMgr.showProcesses('all')
-            case letter if letter in ("number", "n"):
-              print("Number of processes: {}".format(processMgr.getProcessNum()))
-        
-        case letter if letter in ("insert", "i"):
-          urlQ.put(cmd[1])
-        
-        case letter if letter in ("help", "h"):
-          showInfo()
-          
-        case _:
-          showInfo()
-    
-    except KeyboardInterrupt:
-      break
-    except (IndexError, ValueError):
-      showInfo()
-
-def terminateDriver(driver: SearchDriver):
+def terminateDriver(driver):
   if driver:
     try:
       driver.quit()

@@ -34,8 +34,11 @@ class HostSemaphoreMgr(multiprocessing.managers.Namespace):
     except KeyError:
       pass
     else:
-      self.logger.error("Double lock acquire: {}".format(id))
-      return False
+      try:
+        del(self.locker[id])
+      except KeyError:
+        self.logger.error("Double lock acquire: {}".format(id))
+        return False
     
     sHost = URL.getHost(sURL)
     for semaphore in self.config.URLSemaphore.keys():
@@ -103,6 +106,9 @@ class HostSemaphoreMgr(multiprocessing.managers.Namespace):
     if not self.releaser.is_alive():
       self.releaser = threading.Thread(target=self.deadlockCheck, daemon=True)
       self.releaser.start()
+  
+  def killReleaser(self):
+    self.releaserKillFlag = True
   
   def deadlockCheck(self):
     sys.stderr = CustomLogging.StreamToLogger(self.logger, logging.CRITICAL)
