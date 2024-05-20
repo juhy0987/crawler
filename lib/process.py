@@ -251,26 +251,31 @@ def process (processId, chiefMgrConn, ping, managers, urlQ, writerQ):
             continue
           
           if link:
-            if len(link) > 10 and link[:10] == "javascript":
-              continue
-            
-            sharp = link.find('#')
-            if sharp > -1:
-              link = link[:sharp]
+            try:
+              if len(link) > 10 and link[:10] == "javascript":
+                continue
               
-            if not link or link[-1] != "/":
-              link += "/"
-            
-            if len(link) > 4 and link[:3] == "go/":
-              link = "https://" + link[3:]
-            else:
-              link = urljoin(sHost, link)
-            
-            if not managers[2].lookup(url): # 0: matched
-              continue
-            
-            if not managers[3].lookup(link):
-              urlQ.put((link, depth+1))
+              sharp = link.find('#')
+              if sharp > -1:
+                link = link[:sharp]
+              
+              link = link.strip()
+              if not link or link[-1] != "/":
+                link += "/"
+              
+              if len(link) > 4 and link[:3] == "go/":
+                link = "https://" + link[3:]
+              else:
+                link = urljoin(sHost.strip(), link.strip())
+              
+              if not managers[2].lookup(url): # 0: matched
+                continue
+              
+              if not managers[3].lookup(link):
+                urlQ.put((link, depth+1))
+            except IndexError:
+              logger.warning(f"Wrong parse format: {link}")
+              pass
   except (KeyboardInterrupt, BrokenPipeError):
     managers[3].delete(url)
     logger.info("Received exit signal")
