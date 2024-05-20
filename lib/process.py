@@ -165,6 +165,11 @@ def process (processId, chiefMgrConn, ping, managers, urlQ, writerQ):
           managers[3].delete(url)
           urlQ.put((url, depth+1))
           continue
+        elif "net::ERR_SSL_PROTOCOL_ERROR" in e.msg:
+          logger.warning("SSL_ERROR: {}".format(url))
+          managers[3].delete(url)
+          urlQ.put((url, depth+1))
+          continue
         elif "net::ERR_NAME_NOT_RESOLVED" in e.msg:
           logger.warning("Name Not Resolved: {}".format(url))
           continue
