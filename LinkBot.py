@@ -207,7 +207,7 @@ def getStartURL(managers, urlQ, config):
     managers[3].clear()
 
 def console(commands, managers, processMgr, urlQ, args):
-  p = threading.Thread(name="management", target=manageProcess, args=args, daemon=True)
+  p = multiprocessing.Process(name="management", target=manageProcess, args=args)
   p.start()
   
   flag = True
@@ -359,7 +359,7 @@ def console(commands, managers, processMgr, urlQ, args):
       
       if not p.is_alive():
         print("\n\n<<< Management Process Dead >>> revive the Management Process\n\n")
-        p = multiprocessing.Process(name="management", target=manageProcess, args=args, daemon=True)
+        p = multiprocessing.Process(name="management", target=manageProcess, args=args)
         p.start()
     except KeyboardInterrupt:
       break
