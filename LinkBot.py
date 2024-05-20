@@ -168,7 +168,7 @@ def manageProcess(logger, managers, commands, processMgr, urlQ, writerQ, config)
               if proc.info['cmdline'] and 'LinkBot.py' in proc.info['cmdline']:
                 p = psutil.Process(proc.info['pid'])
                 cpu_usage += p.cpu_percent(interval=1.0)
-                memory_usage += p.memory_info.rss / 1024 / 1024
+                memory_usage += p.memory_info().rss / 1024 / 1024
             except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
               pass
           
