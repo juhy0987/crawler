@@ -104,7 +104,7 @@ def manageProcess(logger, managers, commands, processMgr, urlQ, writerQ, config)
         try:
           if proc.info['ppid'] == 1 and proc.info['cmdline'] and 'LinkBot.py' in proc.info['cmdline']:
             subprocess.Popen(["kill", "-9", str(proc.info['pid'])], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+        except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess, KeyError):
           pass
       
       if not writer.is_alive():
