@@ -8,8 +8,6 @@ import atexit
 import pickle
 import signal
 import logging
-import queue
-import select
 import psutil
 
 import lib
@@ -101,18 +99,15 @@ def manageProcess(logger, managers, commands, processMgr, urlQ, writerQ, config)
         
         procSig.killByPID(pid)
       
-      p = subprocess.Popen(["ps", "-ef", "|", "grep", "'LinkBot.py'"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-      output, _ = p.communicate()
-      for line in output:
+      allProcesses = psutil.process_iter(['pid', 'ppid', 'cmdline'])
+      for proc in allProcesses:
         try:
-          val = line.split()
-          if val[2] == "1":
-            p = subprocess.Popen(["kill", "-9", val[1]], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        except:
+          if proc.info['ppid'] == 1 and proc.info['cmdline'] and 'LinkBot.py' in proc.info['cmdline']:
+            subprocess.Popen(["kill", "-9", str(proc.info['pid'])], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
           pass
       
       if not writer.is_alive():
-        toWriterConn, writerConn = multiprocessing.Pipe()
         writer = multiprocessing.Process(name="Writer",
                                     target=writerProcess,
                                     args=("Writer", writerConn, managers[0], writerQ),
@@ -136,7 +131,7 @@ def manageProcess(logger, managers, commands, processMgr, urlQ, writerQ, config)
       
       if managers[0].getUpdateFlag():
         for id, conn in processMgr.pipes.items():
-          conn.send("config update")
+          conn[0].send("config update")
         toWriterConn.send("config update")
         
         managers[0].setUpdateFlag(False)
@@ -151,7 +146,7 @@ def manageProcess(logger, managers, commands, processMgr, urlQ, writerQ, config)
       
       if managers[5].getUpdateFlag():
         for id, conn in processMgr.pipes.items():
-          conn.send("keyword update")
+          conn[0].send("keyword update")
         
         managers[5].setUpdateFlag(False)
       
@@ -364,7 +359,7 @@ def console(commands, managers, processMgr, urlQ, args):
       
       if not p.is_alive():
         print("\n\n<<< Management Process Dead >>> revive the Management Process\n\n")
-        p = threading.Thread(name="management", target=manageProcess, args=args, daemon=True)
+        p = multiprocessing.Process(name="management", target=manageProcess, args=args, daemon=True)
         p.start()
     except KeyboardInterrupt:
       break
@@ -540,7 +535,7 @@ if __name__=="__main__":
   # Data Queue Initiate
   writerQ = multiprocessing.Queue()
   urlQ = multiprocessing.Queue()
-  commands = queue.Queue()
+  commands = multiprocessing.Queue()
   
   atexit.register(emergencyQBackup, urlQ, config.BackupFilePath)
   atexit.register(emergencyQWrite, writerQ, config.URLLogFilePath)
