@@ -20,6 +20,7 @@ class RobotsJudgement(object):
     except requests.RequestException as e:
       return True
     
+    print(robots)
     self.parse(robots)
       
     return True
@@ -29,22 +30,23 @@ class RobotsJudgement(object):
     flag = False
     for option in options:
       try:
-        isAllow, dir = option.split()
+        isAllow, dir = option.split(':', 1)
       except ValueError:
         continue
       
-      isAllow = isAllow[:-1]
+      isAllow = isAllow.strip().lower()
+      dir = dir.strip()
       if not flag:
-        if isAllow == "User-agent" and dir == "*":
+        if isAllow == "user-agent" and dir == "*":
           flag = True
         continue
       
-      if isAllow == "User-agent" and dir != "*":
+      if isAllow == "user-agent" and dir != "*":
         break
       
-      if isAllow == "Disallow":
+      if isAllow == "disallow":
         isAllow = False
-      elif isAllow == "Allow":
+      elif isAllow == "allow":
         isAllow = True
       
       pattern = re.sub(r'\?', r'\\?', dir)
@@ -67,12 +69,15 @@ class RobotsJudgement(object):
     isAllow = True
     for dir in self.patterns.keys():
       if re.match(dir, path):
+        # print(f"matched: {dir}")
         isAllow = self.patterns[dir]
     return isAllow
 
 if __name__=="__main__":
-  baseURL = "https://www.google.com/"
-  url = "https://www.google.com/?hl=1&gws_rd=ssl"
+  baseURL = "https://www.naver.com/"
+  url = "https://www.naver.com/"
+  # print(re.match("/$", "/"))
   
   robots = RobotsJudgement(baseURL)
+  print(robots.patterns)
   print(robots.isAble(url))
