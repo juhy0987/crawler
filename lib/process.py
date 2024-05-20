@@ -272,7 +272,9 @@ def process (processId, chiefMgrConn, ping, managers, urlQ, writerQ):
               urlQ.put((link, depth+1))
   except (KeyboardInterrupt, BrokenPipeError):
     managers[3].delete(url)
+    logger.info("Received exit signal")
     urlQ.put((url, depth))
+    sys.exit(0)
   except Exception as e:
     logger.critical("Unhandled Error: {} {}".format(url, str(e)))
     managers[3].delete(url)
@@ -297,7 +299,7 @@ def process (processId, chiefMgrConn, ping, managers, urlQ, writerQ):
       pass
   ####################################################
   
-  logger.info("Terminated")
+  logger.info("Terminated: No URL in Q")
   
   sys.exit(0)
   
