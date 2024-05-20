@@ -84,8 +84,7 @@ def process (processId, chiefMgrConn, ping, managers, urlQ, writerQ):
           case _:
             pass
             
-      if not ping.poll(0):
-        ping.send("l")
+      ping.send("l")
 
       if urlQ.empty():
         qEmptyTimeoutCnt += 1
@@ -105,8 +104,9 @@ def process (processId, chiefMgrConn, ping, managers, urlQ, writerQ):
       except:
         pass
       
-      # if not managers[2].lookup(url): # 0: matched
-      #   continue
+      if not managers[2].lookup(url): # 0: matched
+        continue
+      
       if not managers[4].acquire(processId, url):
         urlQ.put((url, depth))
         continue
@@ -188,6 +188,8 @@ def process (processId, chiefMgrConn, ping, managers, urlQ, writerQ):
       finally:
         managers[4].release(processId)
       
+      ping.send("l")
+      
       windowHandles = crawler.window_handles
       if len(windowHandles) > 1:
         for handle in windowHandles[1:]:
@@ -217,11 +219,13 @@ def process (processId, chiefMgrConn, ping, managers, urlQ, writerQ):
         #   유해 사이트 목록에 추가
         #   writerQ.put(url)
       
+      ping.send("l")
       ############### Next Link Crawling ##################
       if depth < config.MaxDepth:
         tag_a = soup.select('a')
           
         for tag in tag_a:
+          ping.send("l")
           try:
             link = tag['href']
           except KeyError:
@@ -231,15 +235,17 @@ def process (processId, chiefMgrConn, ping, managers, urlQ, writerQ):
             if len(link) > 10 and link[:10] == "javascript":
               continue
             
-            if len(link) > 4 and link[:4].lower() != "http":
+            if len(link) > 2 and link[:3] == "go/":
+              link = "https://" + link[3:]
+            elif len(link) > 4 and link[:4].lower() != "http":
               if link[:2] == "//":
                 link = "https:" + link
-              elif link[0] in "/?":
+              elif link[0] in "/":
                 link = sHost + link
               else:
                 link = sHost + '/' + link
             elif len(link) <= 4:
-              if link[0] in '/?':
+              if link[0] == '/':
                 link = sHost + link
               else:
                 link = sHost + '/' + link
@@ -251,13 +257,16 @@ def process (processId, chiefMgrConn, ping, managers, urlQ, writerQ):
             if len(link) > 1 and link[-1] == '/':
               link = link[:-1]
             
+            if not managers[2].lookup(url): # 0: matched
+              continue
+            
             if not managers[3].lookup(link):
               urlQ.put((link, depth+1))
   except (KeyboardInterrupt, BrokenPipeError):
     managers[3].delete(url)
     urlQ.put((url, depth))
   except Exception as e:
-    logger.critical("Unhandled Error: {}".format(url))
+    logger.critical("Unhandled Error: {} {}".format(url, str(e)))
     managers[3].delete(url)
     urlQ.put((url, depth))
     raise e
@@ -285,6 +294,11 @@ def process (processId, chiefMgrConn, ping, managers, urlQ, writerQ):
   ####################################################
   
   logger.info("Terminated")
+  
+  try:
+    ping.send("d")
+  except:
+    pass
   
   sys.exit(0)
   
