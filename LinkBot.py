@@ -65,11 +65,11 @@ def manageProcess(logger, managers, commands, processMgr, urlQ, writerQ, config)
         if processMgr.getLifeCnt(id) > 20:
           pid = processMgr.getProcess(id).pid
           if not processMgr.softKill[id]:
-            logger.warning("exit signal to child {}".format(id))
+            logger.info("exit signal to child {}".format(id))
             os.kill(pid, signal.SIGINT)
             processMgr.softKill[id] = True
           else:
-            logger.warning("kill child {}".format(id))
+            logger.info("kill child {}".format(id))
             
             procSig.killByPID(pid)
 
@@ -83,14 +83,14 @@ def manageProcess(logger, managers, commands, processMgr, urlQ, writerQ, config)
         p.join()
         
         processMgr.delProcess(id)
-        curFDList = lib.getFDList()
-        for fType, fNum in processMgr.usedFD[id]:
-          for fd, path in curFDList.items():
-            if (fType, fNum) == path:
-              try:
-                os.close(fd)
-              except OSError:
-                pass
+        # curFDList = lib.getFDList()
+        # for fType, fNum in processMgr.usedFD[id]:
+        #   for fd, path in curFDList.items():
+        #     if (fType, fNum) == path:
+        #       try:
+        #         os.close(fd)
+        #       except OSError:
+        #         pass
         processMgr.setUnusedNum(id)
         
         pid = managers[1].getPid(id)
@@ -99,13 +99,16 @@ def manageProcess(logger, managers, commands, processMgr, urlQ, writerQ, config)
         
         procSig.killByPID(pid)
       
-      allProcesses = psutil.process_iter(['pid', 'ppid', 'cmdline'])
-      for proc in allProcesses:
-        try:
-          if proc.info['ppid'] == 1 and proc.info['cmdline'] and 'LinkBot.py' in proc.info['cmdline']:
-            subprocess.Popen(["kill", "-9", str(proc.info['pid'])], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess, KeyError):
-          pass
+      try:
+        allProcesses = psutil.process_iter(['pid', 'ppid', 'cmdline'])
+        for proc in allProcesses:
+          try:
+            if proc.info['ppid'] == 1 and proc.info['cmdline'] and 'LinkBot.py' in proc.info['cmdline']:
+              subprocess.Popen(["kill", "-9", str(proc.info['pid'])], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+          except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+            pass
+      except (KeyError, OSError):
+        pass
       
       if not writer.is_alive():
         writer = multiprocessing.Process(name="Writer",
@@ -166,9 +169,13 @@ def manageProcess(logger, managers, commands, processMgr, urlQ, writerQ, config)
     pass
   
   if not sigInt:
-    os.kill(os.getpid(), signal.SIGINT)
+    os.kill(os.getppid(), signal.SIGINT)
   
   print("end manageProcess")
+  
+  time.sleep(10)
+  if not sigInt:
+    os.kill(os.getppid(), signal.SIGINT)
   sys.exit(0)
 
 def getStartURL(managers, urlQ, config):
