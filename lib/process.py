@@ -4,6 +4,7 @@ import subprocess
 import multiprocessing
 import signal
 import logging
+from urllib.parse import urljoin
 
 import selenium
 from selenium.webdriver.support import expected_conditions as EC
@@ -129,7 +130,7 @@ def process (processId, chiefMgrConn, ping, managers, urlQ, writerQ):
         
         if url != crawler.current_url:
           if "warning.or.kr" in crawler.current_url:
-            # 유해 사이트 목록에 추가
+            writerQ.put(url)
             continue
           
           url = crawler.current_url
@@ -172,6 +173,10 @@ def process (processId, chiefMgrConn, ping, managers, urlQ, writerQ):
           continue
         elif "net::ERR_NAME_NOT_RESOLVED" in e.msg:
           logger.warning("Name Not Resolved: {}".format(url))
+          continue
+        elif "no such execution context" in e.msg:
+          logger.warning("Script Error: {}".format(url))
+          urlQ.put((url, depth+1))
           continue
         elif ("net::ERR_INTERNET_DISCONNECTED" in e.msg or 
               "net::ERR_CONNECTION_RESET" in e.msg or
@@ -242,18 +247,8 @@ def process (processId, chiefMgrConn, ping, managers, urlQ, writerQ):
             
             if len(link) > 2 and link[:3] == "go/":
               link = "https://" + link[3:]
-            elif len(link) > 4 and link[:4].lower() != "http":
-              if link[:2] == "//":
-                link = "https:" + link
-              elif link[0] in "/":
-                link = sHost + link
-              else:
-                link = sHost + '/' + link
-            elif len(link) <= 4:
-              if link[0] == '/':
-                link = sHost + link
-              else:
-                link = sHost + '/' + link
+            else:
+              link = urljoin(sHost, link)
             
             sharp = link.find('#')
             if sharp > -1:
@@ -279,10 +274,6 @@ def process (processId, chiefMgrConn, ping, managers, urlQ, writerQ):
     managers[4].release(processId)
     logger.debug("After release: {}".format(processId))
     try:
-      chiefMgrConn.close()
-    except:
-      pass
-    try:
       crawler.service.process.terminate()
       pid = crawler.service.process.pid
       if sys.platform == 'win32':
@@ -294,14 +285,11 @@ def process (processId, chiefMgrConn, ping, managers, urlQ, writerQ):
     sys.stderr = CustomLogging.StreamToLogger(logger, logging.DEBUG)
     try:
       ping.send("d")
-      ping.close()
     except:
       pass
   ####################################################
   
   logger.info("Terminated")
-  
-  
   
   sys.exit(0)
   
