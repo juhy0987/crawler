@@ -64,7 +64,9 @@ class RobotsJudgement(object):
     if not sURL:
       return False
 
-    path = "/" + sURL.split('/', 1)[1]
+    path = "/"
+    if '/' in sURL:
+      path = path + sURL.split('/', 1)[1]
     isAllow = True
     for dir in self.patterns.keys():
       if re.match(dir, path):
@@ -73,9 +75,11 @@ class RobotsJudgement(object):
     return isAllow
 
 if __name__=="__main__":
-  baseURL = "https://www.naver.com/"
-  url = "https://www.naver.com/"
-  # print(re.match("/$", "/"))
+  
+  
+  url = "https://feedback.theseed.io/posts/889/yutyubeu-2beonjjae-yeongsang-ihu-jaesaeng-bulganeung"
+  baseURL = URL.getProtocolHost(url)
+  print(baseURL)
   
   robots = RobotsJudgement(baseURL)
   print(robots.patterns)
