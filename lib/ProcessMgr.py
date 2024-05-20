@@ -2,6 +2,8 @@ import multiprocessing
 import os
 import glob
 
+from modules import procSig
+
 MAXPROCESS = 64
 
 class ProcessMgr(object):
@@ -95,6 +97,9 @@ class ProcessMgr(object):
         
         if data == "l":
           self.initCnt(id)
+        elif data == "d":
+          procSig.killByPID(self.getProcess(id).pid)
+          return False
       self.increaseCnt(id)
     except (BrokenPipeError, EOFError):
       return False

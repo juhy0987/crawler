@@ -20,6 +20,7 @@ from HostSemephoreMgr import HostSemaphoreMgr
 from KeywordMgr import KeywordMgr
 from lib.process import writerProcess, showInfo
 from modules import CustomLogging
+from modules import procSig
 
 CONFIGPATH = "./config/linkbot.conf"
 ORACLEDB_CONFIGPATH = "./config/oracdb.conf"
@@ -72,10 +73,7 @@ def manageProcess(logger, managers, commands, processMgr, urlQ, writerQ, config)
           else:
             logger.warning("kill child {}".format(id))
             
-            if sys.platform == 'win32':
-              p = subprocess.Popen(["taskkill", "/pid", str(pid), "/t", "/f"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            elif sys.platform == 'linux':
-              p = subprocess.Popen(["kill", "-9", str(pid)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            procSig.killByPID(pid)
 
           processMgr.initCnt(id)
         
@@ -101,12 +99,7 @@ def manageProcess(logger, managers, commands, processMgr, urlQ, writerQ, config)
         if pid < 0:
           continue
         
-        if sys.platform == 'win32':
-          p = subprocess.Popen(["taskkill", "/pid", str(pid), "/t", "/f"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        elif sys.platform == 'linux':
-          p = subprocess.Popen(["pkill", "-9", "-P", str(pid)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        else:
-          continue
+        procSig.killByPID(pid)
       
       p = subprocess.Popen(["ps", "-ef", "|", "grep", "'LinkBot.py'"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
       output, _ = p.communicate()
@@ -448,13 +441,7 @@ def emergencyProcessKill(managers):
   time.sleep(5)
   pidDict = managers[1].getPidDict()
   for key, pid in pidDict.items():
-    if sys.platform == 'win32':
-      p = subprocess.Popen(["taskkill", "/pid", str(pid), "/t", "/f"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    elif sys.platform == 'linux':
-      p = subprocess.Popen(["pkill", "-9", "-P", str(pid)], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    else:
-      continue
-    output, err = p.communicate()
+    procSig.killByPID(pid)
     
     # print(output.decode("cp949"))
     # print(err.decode('cp949'))
