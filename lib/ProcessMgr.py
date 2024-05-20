@@ -100,9 +100,10 @@ class ProcessMgr(object):
         elif data == "d":
           procSig.killByPID(self.getProcess(id).pid)
           return False
+    except (BrokenPipeError, EOFError, OSError):
+      pass
+    finally:
       self.increaseCnt(id)
-    except (BrokenPipeError, EOFError):
-      return False
     
     return True
   
