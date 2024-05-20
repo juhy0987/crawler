@@ -61,8 +61,10 @@ class SearchDriver(webdriver.Chrome):
     self.options.add_argument("disable-cache")
     
     # ignore ssl, certificate
-    self.options.add_argument('--ignore-certificate-errors')
-    self.options.add_argument('--ignore-ssl-errors')
+    self.options.add_argument('ignore-certificate-errors')
+    self.options.add_argument('ignore-ssl-errors')
+    self.options.add_argument('allow-insecure-localhost')
+    self.options.add_argument('disable-web-security')
     
     super().__init__(service=self.service, options=self.options)
   
