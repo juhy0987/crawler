@@ -195,7 +195,8 @@ def process (processId, chiefMgrConn, ping, managers, urlQ, writerQ):
           urlQ.put((url, depth))
           break
         elif ("net::ERR_CONNECTION_REFUSED" in e.msg or
-              "net::ERR_ADDRESS_UNREACHABLE" in e.msg):
+              "net::ERR_ADDRESS_UNREACHABLE" in e.msg or
+              "unexpected alert open" in e.msg):
           continue
         elif ("cannot determine loading status" in str(e) or
               "missing or invalid columnNumber" in str(e)):
