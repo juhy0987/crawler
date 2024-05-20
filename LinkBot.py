@@ -157,24 +157,24 @@ def manageProcess(logger, managers, commands, processMgr, urlQ, writerQ, config)
       if len(processMgr.children) < config.MaxProcess and not urlQ.empty():
         processMgr.addProcess(lib.process, (managers, urlQ, writerQ))
       
-      if not resManageCnt:
-        try:
-          cpu_usage = 0
-          memory_usage = 0
+      # if not resManageCnt:
+      #   try:
+      #     cpu_usage = 0
+      #     memory_usage = 0
           
-          allProcesses = psutil.process_iter(['pid', 'cmdline'])
-          for proc in allProcesses:
-            try:
-              if proc.info['cmdline'] and 'LinkBot.py' in proc.info['cmdline']:
-                p = psutil.Process(proc.info['pid'])
-                cpu_usage += p.cpu_percent(interval=1.0)
-                memory_usage += p.memory_info().rss / 1024 / 1024
-            except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
-              pass
+      #     allProcesses = psutil.process_iter(['pid', 'cmdline'])
+      #     for proc in allProcesses:
+      #       try:
+      #         if proc.info['cmdline'] and 'LinkBot.py' in proc.info['cmdline']:
+      #           p = psutil.Process(proc.info['pid'])
+      #           cpu_usage += p.cpu_percent(interval=1.0)
+      #           memory_usage += p.memory_info().rss / 1024 / 1024
+      #       except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+      #         pass
           
-          logger.info(f"CPU Usage: {cpu_usage} %, Memory Usage: {memory_usage:.2f} MB")
-        except (KeyError, OSError):
-          pass
+      #     logger.info(f"CPU Usage: {cpu_usage} %, Memory Usage: {memory_usage:.2f} MB")
+      #   except (KeyError, OSError):
+      #     pass
       
       if not len(processMgr.children):
         cnt += 1
