@@ -112,6 +112,7 @@ def process (processId, chiefMgrConn, ping, managers, urlQ, writerQ):
       if config.CheckRobot:
         robots = Robots.RobotsJudgement(URL.getProtocolHost(url))
         if not robots.isAble(url): # True: can crawl
+          logger.debug(f"Robot cannot access: {url}")
           continue
       
       if not managers[4].acquire(processId, url):
@@ -152,7 +153,8 @@ def process (processId, chiefMgrConn, ping, managers, urlQ, writerQ):
         managers[3].delete(url)
         urlQ.put((url, depth+1))
         continue
-      except selenium.common.exceptions.UnexpectedAlertPresentException:
+      except (selenium.common.exceptions.UnexpectedAlertPresentException,
+              selenium.common.exceptions.NoSuchElementException):
         logger.debug("Can't access: {}".format(url))
         continue
       except (ConnectionResetError, ConnectionRefusedError):
@@ -251,17 +253,17 @@ def process (processId, chiefMgrConn, ping, managers, urlQ, writerQ):
             if len(link) > 10 and link[:10] == "javascript":
               continue
             
-            if len(link) > 2 and link[:3] == "go/":
-              link = "https://" + link[3:]
-            else:
-              link = urljoin(sHost, link)
-            
             sharp = link.find('#')
             if sharp > -1:
               link = link[:sharp]
+              
+            if not link or link[-1] != "/":
+              link += "/"
             
-            if len(link) > 1 and link[-1] == '/':
-              link = link[:-1]
+            if len(link) > 4 and link[:3] == "go/":
+              link = "https://" + link[3:]
+            else:
+              link = urljoin(sHost, link)
             
             if not managers[2].lookup(url): # 0: matched
               continue
