@@ -20,7 +20,6 @@ class RobotsJudgement(object):
     except requests.RequestException as e:
       return True
     
-    print(robots)
     self.parse(robots)
       
     return True
