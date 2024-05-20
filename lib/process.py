@@ -278,10 +278,6 @@ def process (processId, chiefMgrConn, ping, managers, urlQ, writerQ):
     except:
       pass
     try:
-      ping.close()
-    except:
-      pass
-    try:
       crawler.service.process.terminate()
       pid = crawler.service.process.pid
       if sys.platform == 'win32':
@@ -291,14 +287,16 @@ def process (processId, chiefMgrConn, ping, managers, urlQ, writerQ):
     except:
       pass
     sys.stderr = CustomLogging.StreamToLogger(logger, logging.DEBUG)
+    try:
+      ping.send("d")
+      ping.close()
+    except:
+      pass
   ####################################################
   
   logger.info("Terminated")
   
-  try:
-    ping.send("d")
-  except:
-    pass
+  
   
   sys.exit(0)
   
