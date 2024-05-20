@@ -75,6 +75,11 @@ class Config(object):
     # 1(True): Check
     self.CheckZeroDepth = False
     
+    # Robot Check Option if URL can be crawled
+    # 0(False): Not Check
+    # 1(True): Check
+    self.CheckRobot = False
+    
     # Start URLs(RunMode 0)
     self.StartURL = []
     

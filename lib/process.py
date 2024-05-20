@@ -19,6 +19,7 @@ from Config import Config
 from modules import SearchDriver
 from modules import URL
 from modules import CustomLogging
+from lib import Robots
 
 class CrawlerPIDMgr(multiprocessing.managers.Namespace):
   def __init__(self):
@@ -107,6 +108,11 @@ def process (processId, chiefMgrConn, ping, managers, urlQ, writerQ):
       
       if not managers[2].lookup(url): # 0: matched
         continue
+        
+      if config.CheckRobot:
+        robots = Robots.RobotsJudgement(URL.getProtocolHost(url))
+        if not robots.isAble(url): # True: can crawl
+          continue
       
       if not managers[4].acquire(processId, url):
         urlQ.put((url, depth))
