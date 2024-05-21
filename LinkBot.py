@@ -195,8 +195,7 @@ def manageProcess(logger, managers, commands, processMgr, urlQ, writerQ, config)
   print("end manageProcess")
   
   time.sleep(10)
-  if not sigInt:
-    os.kill(os.getppid(), signal.SIGKILL)
+  os.kill(os.getppid(), signal.SIGINT)
   sys.exit(0)
 
 def getStartURL(managers, urlQ, config):
