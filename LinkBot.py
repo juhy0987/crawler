@@ -162,10 +162,10 @@ def manageProcess(logger, managers, commands, processMgr, urlQ, writerQ, config)
           # cpu_usage = 0
           memory_usage = 0
           
-          allProcesses = psutil.process_iter(['pid', 'cmdline'])
+          allProcesses = psutil.process_iter(['pid', 'name', 'cmdline'])
           for proc in allProcesses:
             try:
-              if proc.info['cmdline'] and ('LinkBot.py' in proc.info['cmdline'] or 'chrome' in proc.info['cmdline']):
+              if proc.info['cmdline'] and ('LinkBot.py' in proc.info['cmdline'] or 'chrome' in proc.info['name']):
                 p = psutil.Process(proc.info['pid'])
                 # cpu_usage += p.cpu_percent(interval=1.0)
                 memory_usage += p.memory_info().rss / 1024 / 1024
