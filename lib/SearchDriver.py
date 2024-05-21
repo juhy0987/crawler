@@ -1,5 +1,6 @@
 import sys, os
 
+import ssl
 import selenium
 from selenium import webdriver
 from bs4 import BeautifulSoup
@@ -51,12 +52,14 @@ class SearchDriver(webdriver.Chrome):
     self.options.add_argument("disable-cache")
     
     # ignore ssl, certificate
-    self.options.add_argument('--ignore-certificate-errors')
-    self.options.add_argument('--ignore-ssl-errors')
-    self.options.add_argument('--allow-insecure-localhost')
-    self.options.add_argument('--disable-web-security')
-    self.options.add_argument('--ignore-urlfetcher-cert-requests')
+    self.options.add_argument('ignore-certificate-errors')
+    self.options.add_argument('ignore-ssl-errors')
+    self.options.add_argument('allow-insecure-localhost')
+    self.options.add_argument('disable-web-security')
+    self.options.add_argument('allow-insecure-localhost')
+    self.options.add_argument('ignore-urlfetcher-cert-requests')
     self.options.accept_insecure_certs = True
+    ssl._create_default_https_context = ssl._create_unverified_context
     
     super().__init__(service=self.service, options=self.options)
   
