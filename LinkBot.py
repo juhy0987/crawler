@@ -1,7 +1,6 @@
 import sys, os
 import time
 import subprocess
-import threading
 import multiprocessing
 import multiprocessing.managers
 import atexit
@@ -10,15 +9,8 @@ import signal
 import logging
 import psutil
 
-import lib
-from Config import ConfigMgr
-from JudgementTreeMgr import JudgementTreeMgr
-from DuplicationDBMgr import DuplicationDBMgr
-from HostSemephoreMgr import HostSemaphoreMgr
-from KeywordMgr import KeywordMgr
-from lib.process import writerProcess, showInfo
-from modules import CustomLogging
-from modules import procSig
+import modules
+from lib import CustomLogging, procSig
 
 CONFIGPATH = "./config/linkbot.conf"
 ORACLEDB_CONFIGPATH = "./config/oracdb.conf"
@@ -27,17 +19,17 @@ DUPLICATIONDB_CONFIGPATH = "./config/redisdb.conf"
 class MyManager(multiprocessing.managers.BaseManager):
   pass
 
-MyManager.register("ConfigMgr", ConfigMgr)
-MyManager.register("JudgementTreeMgr", JudgementTreeMgr)
-MyManager.register("DuplicationDBMgr", DuplicationDBMgr)
-MyManager.register("HostSemaphoreMgr", HostSemaphoreMgr)
-MyManager.register("CrawlerPIDMgr", lib.CrawlerPIDMgr)
-MyManager.register("KeywordMgr", KeywordMgr)
+MyManager.register("ConfigMgr", modules.ConfigMgr.ConfigMgr)
+MyManager.register("CrawlerPIDMgr", modules.process.CrawlerPIDMgr)
+MyManager.register("JudgementTreeMgr", modules.JudgementTreeMgr.JudgementTreeMgr)
+MyManager.register("DuplicationDBMgr", modules.DuplicationDBMgr.DuplicationDBMgr)
+MyManager.register("HostSemaphoreMgr", modules.HostSemaphoreMgr.HostSemaphoreMgr)
+MyManager.register("KeywordMgr", modules.KeywordMgr.KeywordMgr)
 
 def manageProcess(logger, managers, commands, processMgr, urlQ, writerQ, config):
   toWriterConn, writerConn = multiprocessing.Pipe()
   writer = multiprocessing.Process(name="Writer",
-                                   target=writerProcess,
+                                   target=modules.process.writerProcess,
                                    args=("Writer", writerConn, managers[0], writerQ),
                                    daemon=True)
   writer.start()
@@ -113,7 +105,7 @@ def manageProcess(logger, managers, commands, processMgr, urlQ, writerQ, config)
       
       if not writer.is_alive():
         writer = multiprocessing.Process(name="Writer",
-                                    target=writerProcess,
+                                    target=modules.process.writerProcess,
                                     args=("Writer", writerConn, managers[0], writerQ),
                                     daemon=True)
         writer.start()
@@ -155,7 +147,7 @@ def manageProcess(logger, managers, commands, processMgr, urlQ, writerQ, config)
         managers[5].setUpdateFlag(False)
       
       if len(processMgr.children) < config.MaxProcess and not urlQ.empty():
-        processMgr.addProcess(lib.process, (managers, urlQ, writerQ))
+        processMgr.addProcess(modules.process.process, (managers, urlQ, writerQ))
       
       if not resManageCnt:
         try:
@@ -237,7 +229,7 @@ def console(commands, managers, processMgr, urlQ, args):
   p = multiprocessing.Process(name="management", target=manageProcess, args=args)
   p.start()
   
-  flag = True
+  flag = False
   while True:
     try:
       if flag:
@@ -264,7 +256,7 @@ def console(commands, managers, processMgr, urlQ, args):
                 else:
                   print("{}: {}".format(cmd[2], result))
               case _:
-                showInfo()
+                modules.process.showInfo()
                 
           case letter if letter in ("tree", "t"):
             match cmd[1].lower():
@@ -283,7 +275,7 @@ def console(commands, managers, processMgr, urlQ, args):
                 else:
                   print("Matched DBs:", result)
               case _:
-                showInfo()
+                modules.process.showInfo()
                 
           case letter if letter in ("duplicate", "d"):
             if managers[3].lookup(cmd[1]):
@@ -314,7 +306,7 @@ def console(commands, managers, processMgr, urlQ, args):
                   for url in left:
                     print(url)
               case _:
-                showInfo()
+                modules.process.showInfo()
               
           case letter if letter in ("keyword", "k"):
             match cmd[1].lower():
@@ -328,7 +320,7 @@ def console(commands, managers, processMgr, urlQ, args):
                 for key, weight in result:
                   print("Category type: {}, Weight: {}".format(key, weight))
               case _:
-                showInfo()
+                modules.process.showInfo()
                 
           case letter if letter in ("process", "p"):
             match cmd[1].lower():
@@ -343,7 +335,7 @@ def console(commands, managers, processMgr, urlQ, args):
               case letter if letter in ("show", "s"):
                 try:
                   if not processMgr.showProcesses(cmd[2].lower()):
-                    showInfo()
+                    modules.process.showInfo()
                 except IndexError:
                   processMgr.showProcesses('all')
               case letter if letter in ("kill", "k"):
@@ -368,7 +360,7 @@ def console(commands, managers, processMgr, urlQ, args):
                     else:
                       print("No process :", cmd[3])
                   case _:
-                    showInfo()
+                    modules.process.showInfo()
               case letter if letter in ("number", "n"):
                 print("Number of processes: {}".format(processMgr.getProcessNum()))
           
@@ -376,10 +368,10 @@ def console(commands, managers, processMgr, urlQ, args):
             urlQ.put(cmd[1])
           
           case letter if letter in ("help", "h"):
-            showInfo()
+            modules.process.showInfo()
             
           case _:
-            showInfo()
+            modules.process.showInfo()
       else:
         time.sleep(5)
       
@@ -394,7 +386,7 @@ def console(commands, managers, processMgr, urlQ, args):
       print("Background mode")
       flag = False
     except (IndexError, ValueError):
-      showInfo()
+      modules.process.showInfo()
   
   commands.put("x")
   for id, child in processMgr.children.items():
@@ -568,7 +560,8 @@ if __name__=="__main__":
   atexit.register(emergencyQWrite, writerQ, config.URLLogFilePath)
   
   # Process Start
-  processMgr = lib.ProcessMgr(config.MaxProcess)
+  processMgr = modules.ProcessMgr.ProcessMgr(config.MaxProcess)
   getStartURL(managers, urlQ, config)
   console(commands, managers, processMgr, urlQ, (logger, managers, commands, processMgr, urlQ, writerQ, config))
+  
   print("Linkbot Terminated")

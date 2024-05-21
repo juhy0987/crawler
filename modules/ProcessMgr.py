@@ -2,7 +2,7 @@ import multiprocessing
 import os
 import glob
 
-from modules import procSig
+from lib import procSig
 
 MAXPROCESS = 64
 

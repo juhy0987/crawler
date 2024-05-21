@@ -6,12 +6,13 @@ import multiprocessing
 import multiprocessing.managers
 import logging
 
-from query import oracQry
-from Config import Config
-from modules import URL
-from modules import CustomLogging
-from modules.URLTree import URLTree
-from modules.RegexURLTree import RegexTree
+from lib import URL
+from lib import CustomLogging
+from lib.URLTree import URLTree
+from lib.RegexURLTree import RegexTree
+from lib.query import oracQry
+
+from . import ConfigMgr
 
 class JudgementTree(object):
   mainLogger = logging.getLogger('Linkbot')
@@ -50,7 +51,7 @@ class JudgementTree(object):
     self.logger.info("Update Completed, Success: {}, Failed: {}".format(cnt, len(self.queryDict)-cnt))
   
   def update(self, key):
-    oracMgr = subprocess.Popen(["python", "oracMgr.py"], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    oracMgr = subprocess.Popen(["python", "./lib/oracMgr.py"], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     try:
       data, errMsg = oracMgr.communicate(self.queryDict[key][0].encode())
     except KeyError:

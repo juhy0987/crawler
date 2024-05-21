@@ -6,7 +6,7 @@ import multiprocessing.managers
 import copy
 import logging
 
-from modules import CustomLogging
+from lib import CustomLogging
 
 class Config(object):
   mainLogger = logging.getLogger("Linkbot")

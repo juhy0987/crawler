@@ -15,11 +15,12 @@ import selenium.common.exceptions
 
 from bs4 import BeautifulSoup
 
-from Config import Config
-from modules import SearchDriver
-from modules import URL
-from modules import CustomLogging
-from lib import Robots
+from lib import SearchDriver
+from lib import URL
+from lib import CustomLogging
+
+from . import ConfigMgr
+from . import Robots
 
 class CrawlerPIDMgr(multiprocessing.managers.Namespace):
   def __init__(self):
@@ -51,7 +52,7 @@ def process (processId, chiefMgrConn, ping, managers, urlQ, writerQ):
     
     CustomLogging.setLogConfig(mainLogger, config)
     
-    crawler = SearchDriver()
+    crawler = SearchDriver.SearchDriver()
     managers[1].setPid(processId, crawler.service.process.pid)
     wait = WebDriverWait(crawler, timeout=0.1)
     
@@ -127,7 +128,7 @@ def process (processId, chiefMgrConn, ping, managers, urlQ, writerQ):
       if cnt % 20 == 0:
         logger.debug("Alive")
         terminateDriver(crawler)
-        crawler = SearchDriver()
+        crawler = SearchDriver.SearchDriver()
         managers[1].setPid(processId, crawler.service.process.pid)
         wait = WebDriverWait(crawler, timeout=0.1)
       

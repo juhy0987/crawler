@@ -7,7 +7,7 @@ import logging
 import redis
 import redis.exceptions
 
-from modules import CustomLogging
+from lib import CustomLogging
 
 class DuplicationDB(object):
   mainLogger = logging.getLogger('Linkbot')

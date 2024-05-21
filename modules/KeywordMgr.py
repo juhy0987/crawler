@@ -8,9 +8,11 @@ import copy
 import base64
 import logging
 
-from query import oracQry
-from Config import Config
-from modules import CustomLogging
+from .ConfigMgr import Config
+
+from lib import CustomLogging
+from lib.query import oracQry
+
 class Keyword(object):
   mainLogger = logging.getLogger('Linkbot')
   logger = logging.getLogger('Linkbot.Keyword')
@@ -21,7 +23,7 @@ class Keyword(object):
     self.config = None
     
   def load(self, key, query):
-    oracMgr = subprocess.Popen(["python", "oracMgr.py"], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    oracMgr = subprocess.Popen(["python", "./lib/oracMgr.py"], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     data, errMsg = oracMgr.communicate(query.encode())
     self.logger.debug(errMsg.decode())
     conts = pickle.loads(data)

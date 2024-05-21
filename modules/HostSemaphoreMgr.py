@@ -5,9 +5,9 @@ import multiprocessing.managers
 import logging
 import time
 
-from Config import Config
-from modules import URL
-from modules import CustomLogging
+from . import ConfigMgr
+from lib import URL
+from lib import CustomLogging
 
 class HostSemaphoreMgr(multiprocessing.managers.Namespace):
   mainLogger = logging.getLogger('Linkbot')
