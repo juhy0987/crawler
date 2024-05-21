@@ -181,13 +181,17 @@ def manageProcess(logger, managers, commands, processMgr, urlQ, writerQ, config)
     raise e
     pass
   
-  if not sigInt:
-    os.kill(os.getppid(), signal.SIGINT)
+  # if not sigInt:
+  #   os.kill(os.getppid(), signal.SIGINT)
   
   print("end manageProcess")
   
-  time.sleep(10)
-  os.kill(os.getppid(), signal.SIGINT)
+  # time.sleep(10)
+  # os.kill(os.getppid(), signal.SIGINT)
+  
+  if sigInt:
+    time.sleep(10)
+    os.kill(os.getppid(), signal.SIGINT)
   sys.exit(0)
 
 def getStartURL(managers, urlQ, config):
@@ -377,6 +381,11 @@ def console(commands, managers, processMgr, urlQ, args):
       
       
       if not p.is_alive():
+        if urlQ.empty():
+          print("URL Q is empty.. restart after the period")
+          time.sleep(managers[0].getConfig().LinkbotReworkPeriod)
+          getStartURL(managers, urlQ, managers[0].getConfig())
+        
         print("\n\n<<< Management Process Dead >>> revive the Management Process\n\n")
         p = multiprocessing.Process(name="management", target=manageProcess, args=args)
         p.start()
