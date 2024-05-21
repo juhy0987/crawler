@@ -165,9 +165,10 @@ if __name__=="__main__":
     os.remove("linkbot.pid")
   except:
     pass
+  
   config = Config()
   config.load("./config/linkbot.conf")
-  treeMgr = JudgementTreeMgr("./config/oracdb.conf", config)
+  treeMgr = JudgementTreeMgr("./config/oracdb.conf", configMgr)
   
   while True:
     url = input("url >> ").split('\n')[0]
