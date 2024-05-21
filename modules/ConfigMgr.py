@@ -32,8 +32,9 @@ class Config(object):
     self.KeywordLoadPeriod = 30 * 60 # seconds
     self.DBUpdatePeriod = 30 * 60 # seconds
     self.RecoveryDeadlockPeriod = 20 # seconds
-    self.qEmptyTimeoutLimit = 10
+    self.qEmptyTimeoutLimit = 10.0 # seconds
     self.PageLoadTimeoutLimit = 1.5 # seconds
+    self.LinkbotReworkPeriod = 10.0 # seconds
     
     # Start & End Settings
     self.MaxLogCount = 0
