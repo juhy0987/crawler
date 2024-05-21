@@ -42,7 +42,7 @@ class SearchDriver(webdriver.Chrome):
       self.options.add_argument('no-sandbox') # Error in Windows
     
     # humanlike options
-    # self.options.add_argument('disable-gpu')
+    self.options.add_argument('disable-gpu')
     self.options.add_argument('lang=ko_KR')
     self.options.add_argument('user-agent='+getUA())
     
@@ -66,10 +66,16 @@ class SearchDriver(webdriver.Chrome):
     self.options.add_argument('allow-insecure-localhost')
     self.options.add_argument('disable-web-security')
     
+    self.desiredCapabilities = DesiredCapabilities.CHROME.copy()
+    self.desiredCapabilities['acceptInsecureCerts'] = True
+    
     super().__init__(service=self.service, options=self.options)
   
   def __del__ (self):
     self.quit()
+  
+  def default_capabilities(self) -> dict:
+    return self.desiredCapabilities.copy()
 
 
 initialized = False
