@@ -40,6 +40,9 @@ class RobotsJudgement(object):
           flag = True
         continue
       
+      if not dir:
+        continue
+      
       if isAllow == "user-agent" and dir != "*":
         break
       
@@ -77,8 +80,8 @@ class RobotsJudgement(object):
 if __name__=="__main__":
   
   
-  url = "https://feedback.theseed.io/posts/889/yutyubeu-2beonjjae-yeongsang-ihu-jaesaeng-bulganeung"
-  baseURL = URL.getProtocolHost(url)
+  url = "https://fc2.com/ko/"
+  baseURL = getProtocolHost(url)
   print(baseURL)
   
   robots = RobotsJudgement(baseURL)
