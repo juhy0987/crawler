@@ -306,7 +306,12 @@ def process (processId, chiefMgrConn, ping, managers, urlQ, writerQ):
       pass
   ####################################################
   
-  logger.info("Terminated: No URL in Q")
+  if cnt >= 500:
+    logger.info("Terminated: Restart Crawler for resource")
+  elif qEmptyTimeoutCnt >= config.qEmptyTimeoutLimit:
+    logger.info("Terminated: No URL in Q")
+  else:
+    logger.info("Terminated: Disconnected ")
   
   sys.exit(0)
   
