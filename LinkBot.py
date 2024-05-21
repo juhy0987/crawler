@@ -165,7 +165,7 @@ def manageProcess(logger, managers, commands, processMgr, urlQ, writerQ, config)
           allProcesses = psutil.process_iter(['pid', 'cmdline'])
           for proc in allProcesses:
             try:
-              if proc.info['cmdline'] and 'LinkBot.py' in proc.info['cmdline']:
+              if proc.info['cmdline'] and ('LinkBot.py' in proc.info['cmdline'] or 'chrome' in proc.info['cmdline']):
                 p = psutil.Process(proc.info['pid'])
                 # cpu_usage += p.cpu_percent(interval=1.0)
                 memory_usage += p.memory_info().rss / 1024 / 1024
@@ -196,7 +196,7 @@ def manageProcess(logger, managers, commands, processMgr, urlQ, writerQ, config)
   
   time.sleep(10)
   if not sigInt:
-    os.kill(os.getppid(), signal.SIGINT)
+    os.kill(os.getppid(), signal.SIGKILL)
   sys.exit(0)
 
 def getStartURL(managers, urlQ, config):
