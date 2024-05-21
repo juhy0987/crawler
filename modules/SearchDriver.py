@@ -1,15 +1,7 @@
-import time
 import sys, os
-import logging
 
-import subprocess
 import selenium
 from selenium import webdriver
-from selenium.webdriver.common.keys import Keys
-from selenium.webdriver.common.by import By
-from webdriver_manager.chrome import ChromeDriverManager
-from selenium.webdriver.remote.remote_connection import LOGGER
-from selenium.webdriver.common.desired_capabilities import DesiredCapabilities
 from bs4 import BeautifulSoup
 
 lUserAgent = [
@@ -32,8 +24,6 @@ class SearchDriver(webdriver.Chrome):
     initialize()
     self.options = webdriver.ChromeOptions()
     self.service = webdriver.ChromeService(executable_path=chromeDriver)
-    # self.service = webdriver.ChromeService(executable_path=chromeDriver, 
-    #                                        service_args=["--log-path=chromedriver.log"])
     
     # headless options
     self.options.add_argument('headless')
@@ -61,21 +51,17 @@ class SearchDriver(webdriver.Chrome):
     self.options.add_argument("disable-cache")
     
     # ignore ssl, certificate
-    self.options.add_argument('ignore-certificate-errors')
-    self.options.add_argument('ignore-ssl-errors')
-    self.options.add_argument('allow-insecure-localhost')
-    self.options.add_argument('disable-web-security')
-    
-    self.desiredCapabilities = DesiredCapabilities.CHROME.copy()
-    self.desiredCapabilities['acceptInsecureCerts'] = True
+    self.options.add_argument('--ignore-certificate-errors')
+    self.options.add_argument('--ignore-ssl-errors')
+    self.options.add_argument('--allow-insecure-localhost')
+    self.options.add_argument('--disable-web-security')
+    self.options.add_argument('--ignore-urlfetcher-cert-requests')
+    self.options.accept_insecure_certs = True
     
     super().__init__(service=self.service, options=self.options)
   
   def __del__ (self):
     self.quit()
-  
-  def default_capabilities(self) -> dict:
-    return self.desiredCapabilities.copy()
 
 
 initialized = False
@@ -92,19 +78,3 @@ if __name__ == "__main__":
   a = getattr(crawler.service, 'is_connectable', lambda:False)
   print(a)
   crawler.quit()
-  # try:
-  #   crawler.get("https://www.youtube.com/watch?t=5615&v=0_5NSM54cEc&feature=youtu.be")
-  # except selenium.common.exceptions.WebDriverException as e:
-  #   if "net::ERR_CONNECTION_TIMED_OUT" in e.msg:
-  #     sys.exit(1)
-  #   else:
-  #     print(str(e), file=sys.stderr)
-  #     sys.exit(1)
-  
-  
-  # # lLink = crawler.find_elements(By.TAG_NAME, "a")
-  # soup = BeautifulSoup(crawler.page_source, "html.parser")
-  # lLink = soup.select('a')
-  # for link in lLink:
-  #   print(link['href'])
-  # crawler.close()
