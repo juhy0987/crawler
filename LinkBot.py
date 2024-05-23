@@ -9,6 +9,7 @@ import signal
 import logging
 import psutil
 import queue
+import random
 
 import modules
 from lib import CustomLogging, procSig
@@ -42,7 +43,7 @@ def manageProcess(logger, managers, commands, processMgr, urlQ, writerQ, config)
   recentMemoryUsed = []
   try:
     while cnt < 5:
-      if commands.qsize():
+      if commands.qsize(): # exit signal check
         cmd = commands.get().split()
         
         match cmd[0]:
@@ -50,7 +51,9 @@ def manageProcess(logger, managers, commands, processMgr, urlQ, writerQ, config)
             break
           case _:
             pass
-      deadlist = []
+          
+      # Dead Process Check
+      deadlist = [] # check dead children + check heart beat from children
       for id in processMgr.children.keys():
         if not processMgr.checkProcess(id):
           deadlist.append(id)
@@ -77,14 +80,6 @@ def manageProcess(logger, managers, commands, processMgr, urlQ, writerQ, config)
         p.join()
         
         processMgr.delProcess(id)
-        # curFDList = lib.getFDList()
-        # for fType, fNum in processMgr.usedFD[id]:
-        #   for fd, path in curFDList.items():
-        #     if (fType, fNum) == path:
-        #       try:
-        #         os.close(fd)
-        #       except OSError:
-        #         pass
         processMgr.setUnusedNum(id)
         
         pid = managers[1].getPid(id)
@@ -93,7 +88,7 @@ def manageProcess(logger, managers, commands, processMgr, urlQ, writerQ, config)
         
         procSig.killFamilyByPID(pid)
       
-      try:
+      try: # kill all children with no parent
         allProcesses = psutil.process_iter(['pid', 'ppid', 'cmdline'])
         for proc in allProcesses:
           try:
@@ -104,6 +99,7 @@ def manageProcess(logger, managers, commands, processMgr, urlQ, writerQ, config)
       except (KeyError, OSError):
         pass
       
+      # Revive Essential Managers
       if not psutil.pid_exists(managers[1].getPid("Writer")):
         writer = multiprocessing.Process(name="Writer",
                                     target=modules.process.writerProcess,
@@ -126,6 +122,7 @@ def manageProcess(logger, managers, commands, processMgr, urlQ, writerQ, config)
         logger.info("Revived keyword updater")
         managers[1].setPid("keywordMgr", managers[5].getUpdaterPID())
       
+      # Check Update Flags
       if managers[0].getUpdateFlag():
         for id in processMgr.children.keys():
           conn = processMgr.getPipe(id)
@@ -151,9 +148,11 @@ def manageProcess(logger, managers, commands, processMgr, urlQ, writerQ, config)
         
         managers[5].setUpdateFlag(False)
       
+      # Add process
       if urlQ.qsize():
         processMgr.addProcess(modules.process.process, (managers, urlQ, writerQ))
       
+      # Resource Check
       try:
         # cpu_usage = 0
         memory_usage = 0
@@ -181,16 +180,18 @@ def manageProcess(logger, managers, commands, processMgr, urlQ, writerQ, config)
           logger.info(f"Memory Usage: {avg * 100:.2f} %")
           logger.info(f"URL Queue Size: {urlQ.qsize()}")
           if avg > 0.8 or psutil.virtual_memory().free / psutil.virtual_memory().total < 0.02:
-            if len(processMgr.children) > processMgr.maxProcess // 2:
-              processMgr.MaxProcess -= 1
+            if processMgr.maxProcess > config.MaxProcess // 2:
+              processMgr.killProcess(random.choice(list(processMgr.children.keys())))
+              processMgr.maxProcess -= 1
             else:
               break
-          elif len(processMgr.children) >= processMgr.maxProcess and avg < 0.5 and psutil.virtual_memory().free / psutil.virtual_memory().total > 0.5:
-            processMgr.MaxProcess += 1
+          elif processMgr.maxProcess < config.MaxProcess and avg < 0.8 and psutil.virtual_memory().free / psutil.virtual_memory().total > 0.5:
+            processMgr.maxProcess += 1
             
       except (KeyError, OSError):
         pass
-    
+        
+      # Rest
       if not len(processMgr.children):
         cnt += 1
       else:
@@ -208,8 +209,9 @@ def manageProcess(logger, managers, commands, processMgr, urlQ, writerQ, config)
   
   print("end manageProcess")
   
+  # Receive exit signal from main process
   try:
-    for i in range(30):
+    while True:
       if commands.qsize():
         cmd = commands.get().split()
         
