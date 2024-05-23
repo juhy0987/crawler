@@ -24,7 +24,7 @@ class ProcessMgr(object):
       self.lifePipe[i] = multiprocessing.Pipe()
 
   def addProcess(self, target, args):
-    if len(self.children) == self.maxProcess:
+    if len(self.children) >= self.maxProcess:
       return None
 
     id = self.getUnusedNum()
