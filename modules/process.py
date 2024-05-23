@@ -296,12 +296,12 @@ def process (processId, chiefMgrConn, ping, managers, urlQ, writerQ):
   except (KeyboardInterrupt, BrokenPipeError):
     managers[3].delete(url)
     logger.info("Received exit signal")
-    urlQ.put((url, depth))
+    urlQ.put((url, depth+1))
     sys.exit(0)
   except Exception as e:
     logger.critical("Unhandled Error: {} {}".format(url, str(e)))
     managers[3].delete(url)
-    urlQ.put((url, depth))
+    urlQ.put((url, depth+1))
     raise e
   finally:
     managers[4].release(processId)
