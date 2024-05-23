@@ -4,6 +4,7 @@ import subprocess
 import multiprocessing
 import signal
 import logging
+import psutil
 from urllib.parse import urljoin
 
 import selenium
@@ -61,7 +62,7 @@ def process (processId, chiefMgrConn, ping, managers, urlQ, writerQ):
     cnt = 0
     while cnt < 500 and qEmptyTimeoutCnt < config.qEmptyTimeoutLimit:
       # config control
-      if chiefMgrConn.poll(0):
+      while chiefMgrConn.poll(0):
         data = chiefMgrConn.recv().split()
         match data[0]:
           case "config":
@@ -89,12 +90,12 @@ def process (processId, chiefMgrConn, ping, managers, urlQ, writerQ):
             
       ping.send("l")
 
-      if urlQ.empty():
+      if not urlQ.qsize():
         qEmptyTimeoutCnt += 1
         time.sleep(1)
         continue
-      qEmptyTimeoutCnt = 0
       url, depth = urlQ.get()
+      qEmptyTimeoutCnt = 0
       
       try:
         crawler.execute_script("window.localStorage.clear();")  # 로컬 스토리지 비우기
@@ -154,57 +155,71 @@ def process (processId, chiefMgrConn, ping, managers, urlQ, writerQ):
         managers[3].delete(url)
         urlQ.put((url, depth+1))
         continue
-      except (selenium.common.exceptions.UnexpectedAlertPresentException,
-              selenium.common.exceptions.NoSuchElementException):
-        logger.debug("Can't access: {}".format(url))
+      except selenium.common.exceptions.StaleElementReferenceException:
+        logger.debug("Not loaded element exists: {}".format(url))
+        managers[3].delete(url)
+        urlQ.put((url, depth+1))
         continue
-      except (ConnectionResetError, ConnectionRefusedError):
+      except ConnectionResetError:
         logger.debug("Connection Reset: {}".format(url))
         managers[3].delete(url)
         urlQ.put((url, depth+1))
         continue
+      except (selenium.common.exceptions.UnexpectedAlertPresentException,
+              selenium.common.exceptions.NoSuchElementException,
+              ConnectionRefusedError):
+        logger.debug("Can't access: {}".format(url))
+        continue
       except selenium.common.exceptions.InvalidArgumentException:
         logger.debug("Invalid Argument: {}".format(url))
         continue
-      except selenium.common.exceptions.StaleElementReferenceException:
-        logger.debug("Not loaded element exists: {}".format(url))
-        continue
       except selenium.common.exceptions.WebDriverException as e:
-        if "net::ERR_CONNECTION_TIMED_OUT" in e.msg:
-          logger.debug("Timeout: {}".format(url))
+        if ("net::ERR_CONNECTION_TIMED_OUT" in e.msg or 
+            "cannot determine loading status" in str(e) or
+            "missing or invalid columnNumber" in str(e)):
+          logger.warning("Timeout: {}".format(url))
           managers[3].delete(url)
           urlQ.put((url, depth+1))
-          continue
-        elif "net::ERR_SSL_PROTOCOL_ERROR" in e.msg:
-          logger.warning("SSL_ERROR: {}".format(url))
-          managers[3].delete(url)
-          urlQ.put((url, depth+1))
-          continue
-        elif "net::ERR_NAME_NOT_RESOLVED" in e.msg:
-          logger.warning("Name Not Resolved: {}".format(url))
           continue
         elif "no such execution context" in e.msg:
           logger.warning("Script Error: {}".format(url))
           urlQ.put((url, depth+1))
           continue
-        elif ("net::ERR_INTERNET_DISCONNECTED" in e.msg or 
-              "net::ERR_CONNECTION_RESET" in e.msg or
+        elif ("net::ERR_CONNECTION_RESET" in e.msg or 
+              "net::ERR_SSL_PROTOCOL_ERROR" in e.msg):
+          logger.debug("SSL_ERROR: {}".format(url))
+          managers[3].delete(url)
+          urlQ.put((url, depth+1))
+          continue
+        elif ("net::ERR_INTERNET_DISCONNECTED" in e.msg or
               "net::ERR_CONNECTION_CLOSED" in e.msg or
-              "disconnected" in e.msg):
+              "disconnected" in e.msg or 
+              "session not created" in e.msg):
           logger.debug("Disconnected")
           managers[3].delete(url)
           urlQ.put((url, depth))
           break
+        elif "net::ERR_NAME_NOT_RESOLVED" in e.msg:
+          logger.warning("Name Not Resolved: {}".format(url))
+          continue
         elif ("net::ERR_CONNECTION_REFUSED" in e.msg or
               "net::ERR_ADDRESS_UNREACHABLE" in e.msg or
-              "unexpected alert open" in e.msg):
-          continue
-        elif ("cannot determine loading status" in str(e) or
-              "missing or invalid columnNumber" in str(e)):
-          logger.warning("Too short time for loading this url: {}".format(url))
+              "unexpected alert open" in e.msg or 
+              "Max retries exceeded with url" in e.msg):
+          logger.debug("Can't access: {}".format(url))
           continue
         else:
-          raise e
+          logger.critical("Unhandled Error: {} {}".format(url, str(e)))
+          managers[3].delete(url)
+          urlQ.put((url, depth+1))
+          continue
+      except KeyboardInterrupt:
+        raise KeyboardInterrupt
+      except Exception as e:
+        logger.critical("Unhandled Error: {} {}".format(url, str(e)))
+        managers[3].delete(url)
+        urlQ.put((url, depth+1))
+        continue
       finally:
         managers[4].release(processId)
       
@@ -253,7 +268,7 @@ def process (processId, chiefMgrConn, ping, managers, urlQ, writerQ):
           
           if link:
             try:
-              if len(link) > 10 and link[:10] == "javascript":
+              if len(link) > 10 and link[:10].lower() == "javascript":
                 continue
               
               sharp = link.find('#')
@@ -264,7 +279,7 @@ def process (processId, chiefMgrConn, ping, managers, urlQ, writerQ):
               if not link or link[-1] != "/":
                 link += "/"
               
-              if len(link) > 4 and link[:3] == "go/":
+              if len(link) > 4 and "go" in link[:3]:
                 link = "https://" + link[3:]
               else:
                 link = urljoin(sHost.strip(), link.strip())
@@ -291,12 +306,14 @@ def process (processId, chiefMgrConn, ping, managers, urlQ, writerQ):
     managers[4].release(processId)
     logger.debug("After release: {}".format(processId))
     try:
-      crawler.service.process.terminate()
       pid = crawler.service.process.pid
-      if sys.platform == 'win32':
-        p = subprocess.Popen(["taskkill", "/pid", str(pid), "/t", "/f"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-      elif sys.platform == 'linux':
-        p = subprocess.Popen(["pkill", "-9", "-P", str(pid)], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+      try:
+        parent = psutil.Process(pid)
+        for child in parent.children(recursive=True):
+          child.kill()
+        parent.kill()
+      except psutil.NoSuchProcess:
+        pass
     except:
       pass
     sys.stderr = CustomLogging.StreamToLogger(logger, logging.DEBUG)
@@ -349,7 +366,7 @@ def writerProcess(id, chiefConn, configMgr, q):
         logger.error(str(e))
     
     
-    while not q.empty():
+    while q.qsize():
       writer.info(q.get())
       cnt += 1
     if cnt % 1000 == 0:
