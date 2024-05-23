@@ -93,7 +93,7 @@ def manageProcess(logger, managers, commands, processMgr, urlQ, writerQ, config)
         if pid < 0:
           continue
         
-        procSig.killByPID(pid)
+        procSig.killFamilyByPID(pid)
       
       try:
         allProcesses = psutil.process_iter(['pid', 'ppid', 'cmdline'])
@@ -467,8 +467,9 @@ def runMode3(config):
 def crawlerKill(managers):
   pidDict = managers[1].getPidDict()
   for key, pid in pidDict.items():
-    procSig.killByPID(pid)
+    procSig.killFamilyByPID(pid)
   
+  # 혹시 몰라서.. (kill all chrome & chromedriver process)
   if sys.platform == 'win32':
     subprocess.Popen(["taskkill", "/t", "/f", "/im", "chromedriver.exe"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
   elif sys.platform == 'linux':
