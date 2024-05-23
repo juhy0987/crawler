@@ -58,6 +58,9 @@ class Keyword(object):
     except KeyError:
       return -1
     
+    if isinstance(source, bytes):
+      source = source.decode()
+    
     weight = 0
     for key, value in curDict.items():
       if key in source:
