@@ -206,8 +206,7 @@ def process (processId, chiefMgrConn, ping, managers, urlQ, writerQ):
           continue
         elif ("net::ERR_CONNECTION_REFUSED" in e.msg or
               "net::ERR_ADDRESS_UNREACHABLE" in e.msg or
-              "unexpected alert open" in e.msg or 
-              "Max retries exceeded with url" in e.msg):
+              "unexpected alert open" in e.msg):
           logger.debug("Can't access: {}".format(url))
           continue
         else:
