@@ -8,6 +8,7 @@ import pickle
 import signal
 import logging
 import psutil
+import queue
 
 import modules
 from lib import CustomLogging, procSig
@@ -25,6 +26,7 @@ MyManager.register("JudgementTreeMgr", modules.JudgementTreeMgr.JudgementTreeMgr
 MyManager.register("DuplicationDBMgr", modules.DuplicationDBMgr.DuplicationDBMgr)
 MyManager.register("HostSemaphoreMgr", modules.HostSemaphoreMgr.HostSemaphoreMgr)
 MyManager.register("KeywordMgr", modules.KeywordMgr.KeywordMgr)
+MyManager.register("Queue", queue.Queue)
 
 def manageProcess(logger, managers, commands, processMgr, urlQ, writerQ, config):
   toWriterConn, writerConn = multiprocessing.Pipe()
@@ -38,9 +40,10 @@ def manageProcess(logger, managers, commands, processMgr, urlQ, writerQ, config)
   sigInt = False
   cnt = 0
   resManageCnt = 0
+  recentMemoryUsed = []
   try:
     while cnt < 5:
-      if not commands.empty():
+      if commands.qsize():
         cmd = commands.get().split()
         
         match cmd[0]:
@@ -96,14 +99,14 @@ def manageProcess(logger, managers, commands, processMgr, urlQ, writerQ, config)
         allProcesses = psutil.process_iter(['pid', 'ppid', 'cmdline'])
         for proc in allProcesses:
           try:
-            if proc.info['ppid'] == 1 and proc.info['cmdline'] and 'LinkBot.py' in proc.info['cmdline']:
+            if proc.info['ppid'] == 1 and proc.info['cmdline'] and ('LinkBot.py' in proc.info['cmdline'] or 'chrome' in proc.info['cmdline']):
               subprocess.Popen(["kill", "-9", str(proc.info['pid'])], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
           except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
             pass
       except (KeyError, OSError):
         pass
       
-      if not writer.is_alive():
+      if not psutil.pid_exists(managers[1].getPid("Writer")):
         writer = multiprocessing.Process(name="Writer",
                                     target=modules.process.writerProcess,
                                     args=("Writer", writerConn, managers[0], writerQ),
@@ -126,8 +129,10 @@ def manageProcess(logger, managers, commands, processMgr, urlQ, writerQ, config)
         managers[1].setPid("keywordMgr", managers[5].getUpdaterPID())
       
       if managers[0].getUpdateFlag():
-        for id, conn in processMgr.pipes.items():
-          conn[0].send("config update")
+        for id in processMgr.children.keys():
+          conn = processMgr.getPipe(id)
+          if conn:
+            conn.send("config update")
         toWriterConn.send("config update")
         
         managers[0].setUpdateFlag(False)
@@ -137,37 +142,50 @@ def manageProcess(logger, managers, commands, processMgr, urlQ, writerQ, config)
         managers[2].changeConfig()
         managers[3].changeConfig(config)
         managers[4].changeConfig(config)
-        managers[5].changeConfig()
+        managers[5].changeConfig(config)
         processMgr.setMaxProcess(config.MaxProcess)
       
       if managers[5].getUpdateFlag():
-        for id, conn in processMgr.pipes.items():
-          conn[0].send("keyword update")
+        for id in processMgr.children.keys():
+          conn = processMgr.getPipe(id)
+          if conn:
+            conn.send("keyword update")
         
         managers[5].setUpdateFlag(False)
       
-      if len(processMgr.children) < config.MaxProcess and not urlQ.empty():
+      if len(processMgr.children) < config.MaxProcess and urlQ.qsize():
         processMgr.addProcess(modules.process.process, (managers, urlQ, writerQ))
       
-      if not resManageCnt:
-        try:
-          # cpu_usage = 0
-          memory_usage = 0
+      try:
+        # cpu_usage = 0
+        memory_usage = 0
+        
+        allProcesses = psutil.process_iter(['pid', 'name', 'cmdline'])
+        for proc in allProcesses:
+          try:
+            if proc.info['cmdline'] and ('LinkBot.py' in proc.info['cmdline'] or 'chrome' in proc.info['name']):
+              p = psutil.Process(proc.info['pid'])
+              # cpu_usage += p.cpu_percent(interval=1.0)
+              memory_usage += p.memory_info().rss
+          except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+            pass
+        
+        if len(recentMemoryUsed) > 10:
+          recentMemoryUsed.remove(recentMemoryUsed[0])
+        recentMemoryUsed.append(memory_usage)
+        
+        if not resManageCnt:
+          avg = 0
+          for tmp in recentMemoryUsed:
+            avg += tmp
+          avg = avg / len(recentMemoryUsed) / psutil.virtual_memory().total
           
-          allProcesses = psutil.process_iter(['pid', 'name', 'cmdline'])
-          for proc in allProcesses:
-            try:
-              if proc.info['cmdline'] and ('LinkBot.py' in proc.info['cmdline'] or 'chrome' in proc.info['name']):
-                p = psutil.Process(proc.info['pid'])
-                # cpu_usage += p.cpu_percent(interval=1.0)
-                memory_usage += p.memory_info().rss / 1024 / 1024
-            except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
-              pass
-          
-          logger.info(f"Memory Usage: {memory_usage:.2f} MB")
-        except (KeyError, OSError):
-          pass
-      
+          logger.info(f"Memory Usage: {avg * 100:.2f} %")
+          if avg > 0.8:
+            break
+      except (KeyError, OSError):
+        pass
+    
       if not len(processMgr.children):
         cnt += 1
       else:
@@ -176,18 +194,14 @@ def manageProcess(logger, managers, commands, processMgr, urlQ, writerQ, config)
       time.sleep(3)
   except KeyboardInterrupt:
     sigInt = True
-    pass
   except Exception as e:
     raise e
-    pass
   
-  # if not sigInt:
-  #   os.kill(os.getppid(), signal.SIGINT)
+  for id in processMgr.children.keys():
+    processMgr.killProcess(id)
+  crawlerKill(managers)
   
   print("end manageProcess")
-  
-  # time.sleep(10)
-  # os.kill(os.getppid(), signal.SIGINT)
   
   if sigInt:
     time.sleep(10)
@@ -223,9 +237,7 @@ def getStartURL(managers, urlQ, config):
       for url in startURL:
         sharp = url.find('#')
         if sharp > -1:
-          url = url[:url.find('#')]
-        if url[-1] == '/':
-          url = url[:-1]
+          url = url[:sharp]
         urlQ.put((url, 0))
     managers[3].clear()
 
@@ -381,7 +393,7 @@ def console(commands, managers, processMgr, urlQ, args):
       
       
       if not p.is_alive():
-        if urlQ.empty():
+        if not urlQ.qsize():
           print("URL Q is empty.. restart after the period")
           time.sleep(managers[0].getConfig().LinkbotReworkPeriod)
           getStartURL(managers, urlQ, managers[0].getConfig())
@@ -423,8 +435,8 @@ def initHostSemephore(manager, config):
   hostSemaphoreMgr = manager.HostSemaphoreMgr(config)
   return hostSemaphoreMgr
 
-def initKeyword(manager, configMgr):
-  keywordMgr = manager.KeywordMgr(configMgr)
+def initKeyword(manager, config):
+  keywordMgr = manager.KeywordMgr(config)
   return keywordMgr
   # return None
 
@@ -451,30 +463,27 @@ def runMode3(config):
     pass
   return startURL
 
+def crawlerKill(managers):
+  pidDict = managers[1].getPidDict()
+  for key, pid in pidDict.items():
+    procSig.killByPID(pid)
+  
+  if sys.platform == 'win32':
+    subprocess.Popen(["taskkill", "/t", "/f", "/im", "chromedriver.exe"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+  elif sys.platform == 'linux':
+    subprocess.Popen(["killall", "-9", "chromedriver"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    subprocess.Popen(["killall", "-9", "chrome"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
 # ----------------- Emergency Handler ---------------- #
 
 def emergencyProcessKill(managers):
-  print("@@@@")
   managers[0].killUpdater()
   managers[2].killUpdater()
   managers[3].killRecoverer()
   managers[4].killReleaser()
   managers[5].killUpdater()
-  print("!!!!")
-  time.sleep(5)
-  pidDict = managers[1].getPidDict()
-  for key, pid in pidDict.items():
-    procSig.killByPID(pid)
-    
-    # print(output.decode("cp949"))
-    # print(err.decode('cp949'))
   
-  if sys.platform == 'win32':
-    p = subprocess.Popen(["taskkill", "/t", "/f", "/im", "chromedriver.exe"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-  elif sys.platform == 'linux':
-    p = subprocess.Popen(["killall", "-9", "chromedriver"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    p = subprocess.Popen(["killall", "-9", "chrome"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-  output, err = p.communicate()
+  crawlerKill(managers)
 
   print("Linkbot killed children")
   
@@ -482,9 +491,8 @@ def emergencyProcessKill(managers):
   # output, err = p.communicate()
   
 def emergencyQBackup(q, BackupFilePath):
-  print("^^^^^^")
   backupList = []
-  while not q.empty():
+  while q.qsize():
     backupList.append(q.get())
   
   if backupList:
@@ -497,22 +505,19 @@ def emergencyQBackup(q, BackupFilePath):
         pickle.dump(backupList, fd)
     except (FileNotFoundError, TypeError, OSError):
       pass
-  print("&&&&&")
 
 def emergencyQWrite(q, URLLogFilePath):
-  print("#####")
   dir = '/'.join(URLLogFilePath.split('/')[:-1])
   if dir and not os.path.exists(dir):
     os.makedirs(dir)
   
   try:
     with open(URLLogFilePath, "at") as fd:
-      while not q.empty():
+      while q.qsize():
         fd.write(q.get() + '\n')
   except (FileNotFoundError, TypeError, OSError):
     pass
 
-  print("$$$$$$")
 
 # --------------- Emergency Handler End ---------------- #
 
@@ -544,11 +549,11 @@ if __name__=="__main__":
   # Process Killer Initiate
   managers.append(manager.CrawlerPIDMgr())
   atexit.register(emergencyProcessKill, managers)
-  managers[1].setPid("manager", managers[0].getManagerPID())
+  # managers[1].setPid("manager", managers[0].getManagerPID())
   
   # Judge DB Initiate
   managers.append(initJudgementTree(manager, managers[0])) # [2]: Tree
-  managers[1].setPid("treeMgr", managers[2].getUpdaterPID())
+  # managers[1].setPid("treeMgr", managers[2].getUpdaterPID())
   
   # Duplication DB Initiate
   managers.append(initDuplicationDB(manager, config)) # [3]: Duplicate
@@ -557,13 +562,13 @@ if __name__=="__main__":
   managers.append(initHostSemephore(manager, config))
   
   # Keyword Initiate
-  managers.append(initKeyword(manager, managers[0]))
-  managers[1].setPid("keywordMgr", managers[5].getUpdaterPID())
+  managers.append(initKeyword(manager, config))
+  # managers[1].setPid("keywordMgr", managers[5].getUpdaterPID())
   
   # Data Queue Initiate
-  writerQ = multiprocessing.Queue()
-  urlQ = multiprocessing.Queue()
-  commands = multiprocessing.Queue()
+  writerQ = manager.Queue()
+  urlQ = manager.Queue()
+  commands = manager.Queue()
   
   atexit.register(emergencyQBackup, urlQ, config.BackupFilePath)
   atexit.register(emergencyQWrite, writerQ, config.URLLogFilePath)
