@@ -507,6 +507,10 @@ def emergencyQBackup(q, BackupFilePath):
         pickle.dump(backupList, fd)
     except (FileNotFoundError, TypeError, OSError):
       pass
+    
+    print("Rest URL in Queue saved")
+  else:
+    print("No rest URL in Queue")
 
 def emergencyQWrite(q, URLLogFilePath):
   dir = '/'.join(URLLogFilePath.split('/')[:-1])
@@ -520,6 +524,7 @@ def emergencyQWrite(q, URLLogFilePath):
   except (FileNotFoundError, TypeError, OSError):
     pass
 
+  print("Write Complete")
 
 # --------------- Emergency Handler End ---------------- #
 
