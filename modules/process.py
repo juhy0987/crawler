@@ -187,7 +187,8 @@ def process (processId, chiefMgrConn, ping, managers, urlQ, writerQ):
           urlQ.put((url, depth+1))
           continue
         elif ("net::ERR_CONNECTION_RESET" in e.msg or 
-              "net::ERR_SSL_PROTOCOL_ERROR" in e.msg):
+              "net::ERR_SSL_PROTOCOL_ERROR" in e.msg or
+              "net::ERR_SSL_VERSION_OR_CIPHER_MISMATCH" in e.msg):
           logger.debug("SSL_ERROR: {}".format(url))
           managers[3].delete(url)
           urlQ.put((url, depth+1))
@@ -339,35 +340,38 @@ def writerProcess(id, chiefConn, configMgr, q):
   
   cnt = 0
   tStart = time.time()
-  while True:
-    if chiefConn.poll(0):
-      data = chiefConn.recv()
-      try:
-        data = data.split()
-        match data[0]:
-          case "config":
-            match data[1]:
-              case "update":
-                config = configMgr.getConfig()
-                
-                # apply changed configuration
-                CustomLogging.setLogConfig(mainLogger, config)
-                logger.info("Configuration change applied")
-              case _:
-                pass
-          case _:
-            pass
-      except BrokenPipeError:
-        sys.exit(0)
-    
-    while q.qsize():
-      writer.info(q.get())
-      cnt += 1
-    if cnt % 1000 == 0:
-      tEnd = time.time()
-      writer.debug("Elapsed time: {}\n".format(tEnd-tStart))
-      writer.debug("{}!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n\n\n\n\n\n".format(cnt))
-    time.sleep(1)
+  try:
+    while True:
+      if chiefConn.poll(0):
+        data = chiefConn.recv()
+        try:
+          data = data.split()
+          match data[0]:
+            case "config":
+              match data[1]:
+                case "update":
+                  config = configMgr.getConfig()
+                  
+                  # apply changed configuration
+                  CustomLogging.setLogConfig(mainLogger, config)
+                  logger.info("Configuration change applied")
+                case _:
+                  pass
+            case _:
+              pass
+        except BrokenPipeError:
+          sys.exit(0)
+      
+      while q.qsize():
+        writer.info(q.get())
+        cnt += 1
+      if cnt % 1000 == 0:
+        tEnd = time.time()
+        writer.debug("Elapsed time: {}\n".format(tEnd-tStart))
+        writer.debug("{}!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n\n\n\n\n\n".format(cnt))
+      time.sleep(1)
+  except KeyboardInterrupt:
+    sys.exit(0)
 
 def showInfo():
   print("""
