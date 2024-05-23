@@ -37,7 +37,7 @@ class HostSemaphoreMgr(multiprocessing.managers.Namespace):
       try:
         del(self.locker[id])
       except KeyError:
-        self.logger.error("Double lock acquire: {}".format(id))
+        self.logger.error(f"Double lock acquire: {id}")
         return False
     
     sHost = URL.getHost(sURL)
@@ -76,7 +76,7 @@ class HostSemaphoreMgr(multiprocessing.managers.Namespace):
     try:
       sHost = self.locker[id]
     except KeyError:
-      self.logger.debug("No key matched: {}".format(id))
+      self.logger.debug(f"No key matched: {id}")
       return False
     
     del(self.locker[id])
@@ -129,7 +129,7 @@ class HostSemaphoreMgr(multiprocessing.managers.Namespace):
           pass
           
       for url in urls:
-        self.logger.info("Release unused url: ", url)
+        self.logger.info(f"Release unused url: {url}")
         try:
           del(self.curRequest[url])
         except KeyError:
