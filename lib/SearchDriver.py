@@ -31,6 +31,7 @@ class SearchDriver(webdriver.Chrome):
     self.options.add_argument('window-size=1920x1080')
     if sys.platform == 'linux':
       self.options.add_argument('no-sandbox') # Error in Windows
+      self.options.add_argument('disable-dev-shm-usage')
     
     # humanlike options
     self.options.add_argument('disable-gpu')
