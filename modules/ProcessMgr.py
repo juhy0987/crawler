@@ -107,6 +107,30 @@ class ProcessMgr(object):
     
     return True
   
+  def killProcess(self, id):
+    import signal, time
+    
+    pid = self.getProcess(id).pid
+    pipe =  self.lifePipe[id][0]
+    try:
+      os.kill(pid, signal.SIGINT)
+    except ProcessLookupError:
+      pass
+    for i in range(10):
+      flag = False
+      try:
+        while pipe.poll(0):
+          data = pipe.recv()
+          if data == "d":
+            flag = True
+            break
+      except (BrokenPipeError, EOFError, OSError):
+        pass
+      if flag:
+        break
+      time.sleep(0.1)
+    procSig.killByPID(pid)
+  
   def initCnt(self, id):
     try:
       self.lifeCnt[id] = 0
