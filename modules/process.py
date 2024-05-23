@@ -19,6 +19,7 @@ from bs4 import BeautifulSoup
 from lib import SearchDriver
 from lib import URL
 from lib import CustomLogging
+from lib import procSig
 
 from . import ConfigMgr
 from . import Robots
@@ -307,13 +308,7 @@ def process (processId, chiefMgrConn, ping, managers, urlQ, writerQ):
     logger.debug("After release: {}".format(processId))
     try:
       pid = crawler.service.process.pid
-      try:
-        parent = psutil.Process(pid)
-        for child in parent.children(recursive=True):
-          child.kill()
-        parent.kill()
-      except psutil.NoSuchProcess:
-        pass
+      procSig.killFamilyByPID(pid)
     except:
       pass
     sys.stderr = CustomLogging.StreamToLogger(logger, logging.DEBUG)
@@ -345,7 +340,7 @@ def writerProcess(id, chiefConn, configMgr, q):
   cnt = 0
   tStart = time.time()
   while True:
-    if chiefConn.poll(0.01):
+    if chiefConn.poll(0):
       data = chiefConn.recv()
       try:
         data = data.split()
@@ -362,9 +357,8 @@ def writerProcess(id, chiefConn, configMgr, q):
                 pass
           case _:
             pass
-      except Exception as e:
-        logger.error(str(e))
-    
+      except BrokenPipeError:
+        sys.exit(0)
     
     while q.qsize():
       writer.info(q.get())
