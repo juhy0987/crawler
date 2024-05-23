@@ -99,6 +99,7 @@ class ProcessMgr(object):
           self.initCnt(id)
         elif data == "d":
           procSig.killByPID(self.getProcess(id).pid)
+          self.initCnt(id)
           return False
     except (BrokenPipeError, EOFError, OSError):
       pass
@@ -130,6 +131,7 @@ class ProcessMgr(object):
         break
       time.sleep(0.1)
     procSig.killByPID(pid)
+    self.initCnt(id)
   
   def initCnt(self, id):
     try:
