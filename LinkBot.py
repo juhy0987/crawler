@@ -181,6 +181,7 @@ def manageProcess(logger, managers, commands, processMgr, urlQ, writerQ, config)
           avg = avg / len(recentMemoryUsed) / psutil.virtual_memory().total
           
           logger.info(f"Memory Usage: {avg * 100:.2f} %")
+          logger.info(f"URL Queue Size: {urlQ.qsize()}")
           if avg > 0.8:
             break
       except (KeyError, OSError):
