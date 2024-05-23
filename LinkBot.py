@@ -37,7 +37,6 @@ def manageProcess(logger, managers, commands, processMgr, urlQ, writerQ, config)
   writer.start()
   managers[1].setPid("Writer", writer.pid)
   
-  sigInt = False
   cnt = 0
   resManageCnt = 0
   recentMemoryUsed = []
@@ -48,7 +47,6 @@ def manageProcess(logger, managers, commands, processMgr, urlQ, writerQ, config)
         
         match cmd[0]:
           case "x":
-            sigInt = True
             break
           case _:
             pass
@@ -153,7 +151,7 @@ def manageProcess(logger, managers, commands, processMgr, urlQ, writerQ, config)
         
         managers[5].setUpdateFlag(False)
       
-      if len(processMgr.children) < config.MaxProcess and urlQ.qsize():
+      if urlQ.qsize():
         processMgr.addProcess(modules.process.process, (managers, urlQ, writerQ))
       
       try:
@@ -182,8 +180,14 @@ def manageProcess(logger, managers, commands, processMgr, urlQ, writerQ, config)
           
           logger.info(f"Memory Usage: {avg * 100:.2f} %")
           logger.info(f"URL Queue Size: {urlQ.qsize()}")
-          if avg > 0.8:
-            break
+          if avg > 0.8 or psutil.virtual_memory().free / psutil.virtual_memory().total < 0.02:
+            if len(processMgr.children) > processMgr.maxProcess // 2:
+              processMgr.MaxProcess -= 1
+            else:
+              break
+          elif len(processMgr.children) >= processMgr.maxProcess and avg < 0.5 and psutil.virtual_memory().free / psutil.virtual_memory().total > 0.5:
+            processMgr.MaxProcess += 1
+            
       except (KeyError, OSError):
         pass
     
@@ -194,19 +198,32 @@ def manageProcess(logger, managers, commands, processMgr, urlQ, writerQ, config)
       resManageCnt = (resManageCnt + 1) % 10
       time.sleep(3)
   except KeyboardInterrupt:
-    sigInt = True
+    pass
   except Exception as e:
     raise e
-  
-  for id in processMgr.children.keys():
-    processMgr.killProcess(id)
-  crawlerKill(managers)
+  finally:
+    for id in processMgr.children.keys():
+      processMgr.killProcess(id)
+    crawlerKill(managers)
   
   print("end manageProcess")
   
-  if sigInt:
-    time.sleep(10)
-    os.kill(os.getppid(), signal.SIGINT)
+  try:
+    for i in range(30):
+      if commands.qsize():
+        cmd = commands.get().split()
+        
+        match cmd[0]:
+          case "f":
+            break
+          case _:
+            pass
+      time.sleep(1)
+  except:
+    pass
+          
+  time.sleep(3)
+  os.kill(os.getppid(), signal.SIGINT)
   sys.exit(0)
 
 def getStartURL(managers, urlQ, config):
@@ -219,8 +236,6 @@ def getStartURL(managers, urlQ, config):
       sys.exit(1)
 
     for url, depth in startURL:
-      if url[-1] == '/':
-        url = url[:-1]
       urlQ.put((url, depth))
   else:
     match config.RunMode:
@@ -411,11 +426,6 @@ def console(commands, managers, processMgr, urlQ, args):
       modules.process.showInfo()
   
   commands.put("x")
-  for id, child in processMgr.children.items():
-    try:
-      os.kill(child.pid, signal.SIGINT)
-    except ProcessLookupError:
-      pass
   
   print("end console")
 
@@ -466,8 +476,9 @@ def runMode3(config):
 
 def crawlerKill(managers):
   pidDict = managers[1].getPidDict()
-  for key, pid in pidDict.items():
-    procSig.killFamilyByPID(pid)
+  if pidDict:
+    for key, pid in pidDict.items():
+      procSig.killFamilyByPID(pid)
   
   # 혹시 몰라서.. (kill all chrome & chromedriver process)
   if sys.platform == 'win32':
@@ -478,7 +489,7 @@ def crawlerKill(managers):
 
 # ----------------- Emergency Handler ---------------- #
 
-def emergencyProcessKill(managers):
+def exitProcessKill(managers):
   managers[0].killUpdater()
   managers[2].killUpdater()
   managers[3].killRecoverer()
@@ -486,13 +497,11 @@ def emergencyProcessKill(managers):
   managers[5].killUpdater()
   
   crawlerKill(managers)
-
-  print("Linkbot killed children")
   
   # p = subprocess.Popen(["taskkill", "/t", "/f", "/im", "chrome.exe"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
   # output, err = p.communicate()
   
-def emergencyQBackup(q, BackupFilePath):
+def exitQBackup(q, BackupFilePath):
   backupList = []
   while q.qsize():
     backupList.append(q.get())
@@ -507,12 +516,8 @@ def emergencyQBackup(q, BackupFilePath):
         pickle.dump(backupList, fd)
     except (FileNotFoundError, TypeError, OSError):
       pass
-    
-    print("Rest URL in Queue saved")
-  else:
-    print("No rest URL in Queue")
 
-def emergencyQWrite(q, URLLogFilePath):
+def exitQWrite(q, URLLogFilePath):
   dir = '/'.join(URLLogFilePath.split('/')[:-1])
   if dir and not os.path.exists(dir):
     os.makedirs(dir)
@@ -523,8 +528,6 @@ def emergencyQWrite(q, URLLogFilePath):
         fd.write(q.get() + '\n')
   except (FileNotFoundError, TypeError, OSError):
     pass
-
-  print("Write Complete")
 
 # --------------- Emergency Handler End ---------------- #
 
@@ -555,7 +558,7 @@ if __name__=="__main__":
   
   # Process Killer Initiate
   managers.append(manager.CrawlerPIDMgr())
-  atexit.register(emergencyProcessKill, managers)
+  atexit.register(exitProcessKill, managers)
   # managers[1].setPid("manager", managers[0].getManagerPID())
   
   # Judge DB Initiate
@@ -577,8 +580,8 @@ if __name__=="__main__":
   urlQ = manager.Queue()
   commands = manager.Queue()
   
-  atexit.register(emergencyQBackup, urlQ, config.BackupFilePath)
-  atexit.register(emergencyQWrite, writerQ, config.URLLogFilePath)
+  atexit.register(exitQBackup, urlQ, config.BackupFilePath)
+  atexit.register(exitQWrite, writerQ, config.URLLogFilePath)
   
   # Process Start
   processMgr = modules.ProcessMgr.ProcessMgr(config.MaxProcess)
@@ -586,3 +589,9 @@ if __name__=="__main__":
   console(commands, managers, processMgr, urlQ, (logger, managers, commands, processMgr, urlQ, writerQ, config))
   
   print("Linkbot Terminated")
+  
+  exitQWrite(writerQ, config.URLLogFilePath)
+  exitQBackup(urlQ, config.BackupFilePath)
+  exitProcessKill(managers)
+  
+  commands.put("f")
