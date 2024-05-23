@@ -2,6 +2,7 @@ import sys
 import time
 import pickle
 import subprocess
+import threading
 import multiprocessing
 import multiprocessing.managers
 import copy
@@ -76,10 +77,9 @@ class Keyword(object):
     return result
 
 class KeywordMgr(multiprocessing.managers.Namespace):
-  def __init__ (self, configMgr):
+  def __init__ (self, config):
     self.keyword = Keyword()
-    self.configMgr = configMgr
-    self.keyword.config = configMgr.getConfig()
+    self.keyword.config = config
     CustomLogging.setLogConfig(self.keyword.mainLogger, self.keyword.config)
     
     baseQuery = oracQry.keywordDict["base"]
@@ -90,58 +90,29 @@ class KeywordMgr(multiprocessing.managers.Namespace):
     
     self.updaterKillFlag = False
     self.updateFlag = False
-    self.conn, cConn = multiprocessing.Pipe()
-    self.updater = multiprocessing.Process(name="Keyword", target=self.autoUpdate, args=(cConn,), daemon=True)
+    self.updater = threading.Thread(name="Keyword", target=self.autoUpdate, daemon=True)
     self.updater.start()
   
   def reviveUpdater(self):
     if not self.updater.is_alive():
-      self.conn, cConn = multiprocessing.Pipe()
-      self.updater = multiprocessing.Process(name="Keyword", target=self.autoUpdate, args=(cConn,), daemon=True)
+      self.updater = threading.Thread(name="Keyword", target=self.autoUpdate, daemon=True)
       self.updater.start()
   
   def killUpdater(self):
     self.updaterKillFlag = True
   
-  def autoUpdate(self, conn):
+  def autoUpdate(self):
     sys.stderr = CustomLogging.StreamToLogger(self.keyword.logger, logging.CRITICAL)
     while True:
       cnt = 0
       while cnt < self.keyword.config.KeywordLoadPeriod:
         if self.updaterKillFlag:
           sys.exit(0)
-        
-        try:
-          if conn.poll(0):
-            data = conn.recv().split()
-            match data[0]:
-              case "config":
-                match data[1]:
-                  case "update":
-                    self.keyword.config = self.configMgr.getConfig()
-                    
-                    # apply changed configuration
-                    CustomLogging.setLogConfig(self.keyword.mainLogger, self.keyword.config)
-                    self.keyword.logger.info("Configuration change applied")
-                  case _:
-                    pass
-              case  _:
-                pass
-        except BrokenPipeError:
-          sys.exit(0)
+    
         cnt += 1
         time.sleep(1)
       
-      baseQuery = oracQry.keywordDict["base"]
-      tmpKeyword = Keyword()
-      tmpKeyword.config = self.keyword.config
-      
-      if not tmpKeyword.load("page", baseQuery.format(self.keyword.config.KeyGID)):
-        self.keyword.logger.info("Page Keyword loaded")
-      if not tmpKeyword.load("url", baseQuery.format(self.keyword.config.URLKeyGID)):
-        self.keyword.logger.info("URL Keyword loaded")
-      
-      self.updateFlag = True
+      self.update()
   
   def update(self):
     baseQuery = oracQry.keywordDict["base"]
@@ -163,8 +134,9 @@ class KeywordMgr(multiprocessing.managers.Namespace):
   def getKeyword(self):
     return copy.deepcopy(self.keyword)
   
-  def changeConfig(self):
-    self.conn.send("config update")
+  def changeConfig(self, config):
+    if config:
+      self.keyword.config = config
   
   def getUpdateFlag(self):
     return self.updateFlag
