@@ -179,14 +179,17 @@ def manageProcess(logger, managers, commands, processMgr, urlQ, writerQ, config)
           
           logger.info(f"Memory Usage: {avg * 100:.2f} %")
           logger.info(f"URL Queue Size: {urlQ.qsize()}")
+          logger.info(f"Current Running Children #: {len(processMgr.children)}")
           if avg > 0.8 or psutil.virtual_memory().free / psutil.virtual_memory().total < 0.02:
             if processMgr.maxProcess > config.MaxProcess // 2:
               processMgr.killProcess(random.choice(list(processMgr.children.keys())))
               processMgr.maxProcess -= 1
+              logger.info(f"Decrease the Process #")
             else:
               break
-          elif processMgr.maxProcess < config.MaxProcess and avg < 0.8 and psutil.virtual_memory().free / psutil.virtual_memory().total > 0.5:
+          elif processMgr.maxProcess < config.MaxProcess and avg < 0.8 and psutil.virtual_memory().free / psutil.virtual_memory().total > 0.05:
             processMgr.maxProcess += 1
+            logger.info(f"Increase the Process #")
             
       except (KeyError, OSError):
         pass
