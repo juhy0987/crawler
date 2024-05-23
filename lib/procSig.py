@@ -2,12 +2,19 @@ import os
 import sys
 import signal
 import subprocess
+import psutil
 
 def killByPID(pid):
   try:
-    if sys.platform == 'win32':
-      p = subprocess.Popen(["taskkill", "/pid", str(pid), "/t", "/f"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    elif sys.platform == 'linux':
-      p = subprocess.Popen(["kill", "-9", str(pid)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-  except (KeyError, OSError):
+    p = psutil.Process(pid)
+  except psutil.NoSuchProcess:
+    pass
+  
+def killFamilyByPID(pid):
+  try:
+    parent = psutil.Process(pid)
+    for child in parent.children(recursive=True):
+      child.kill()
+    parent.kill()
+  except psutil.NoSuchProcess:
     pass
