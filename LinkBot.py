@@ -10,7 +10,6 @@ import logging
 import psutil
 import queue
 import random
-from tqdm import tqdm
 
 import modules
 from lib import CustomLogging, procSig
@@ -234,14 +233,25 @@ def manageProcess(logger, managers, commands, processMgr, urlQ, writerQ, config)
 def getStartURL(managers, urlQ, config):
   if os.path.isfile(config.BackupFilePath):
     try:
+      with open(config.BackupFilePath+".dat", "rt") as fd:
+        total = int(fd.read())
+      
       with open(config.BackupFilePath, "rb") as fd:
-        startURL = pickle.load(fd)
+        unpickler = pickle.Unpickler(fd)
+        cnt = 0
+        while True:
+          try:
+            item = unpickler.load()
+            urlQ.put(item)
+            if (cnt + 1) % 100000 == 0 or (cnt + 1) == total:
+              print(f"Backup Load Progress: {cnt + 1}/{total}", file=sys.stderr)
+            cnt += 1
+          except EOFError:
+            break
       os.remove(config.BackupFilePath)
-    except (FileNotFoundError, TypeError, OSError):
+      os.remove(config.BackupFilePath+".dat")
+    except (FileNotFoundError, TypeError, OSError, ValueError):
       sys.exit(1)
-
-    for url, depth in startURL:
-      urlQ.put((url, depth))
   else:
     match config.RunMode:
       case 0:
@@ -508,25 +518,26 @@ def exitProcessKill(managers):
   
 def exitQBackup(q, BackupFilePath):
   backupList = []
-  cnt = 0
+  total = 0
   while q.qsize():
     backupList.append(q.get())
-    cnt += 1
+    total += 1
   
   if backupList:
     dir = '/'.join(BackupFilePath.split('/')[:-1])
     if dir and not os.path.exists(dir):
       os.makedirs(dir)
     
-    print(f"Backup rest URL Q: {cnt}", file=sys.stderr)
+    print(f"Backup rest URL Q: {total}", file=sys.stderr)
     try:
       with open(BackupFilePath, "wb") as fd:
         pickler = pickle.Pickler(fd)
-        progressBar = tqdm(backupList, total=cnt, desc="Pickling")
-        for i, item in enumerate(progressBar):
+        for i, item in enumerate(backupList):
           pickler.dump(item)
-          if (i + 1) % 100000 or (i + 1) == cnt:
-            print(f"Backup Procgress: {i + 1}/{cnt}", file=sys.stderr)
+          if (i + 1) % 100000 == 0 or (i + 1) == total:
+            print(f"Backup Progress: {i + 1}/{total}", file=sys.stderr)
+      with open(BackupFilePath+".dat", "wt") as fd:
+        print(total, file=fd)
     except (FileNotFoundError, TypeError, OSError):
       pass
 
