@@ -145,7 +145,8 @@ def process (processId, chiefMgrConn, ping, managers, urlQ, writerQ):
         crawler.get(url)
         
         if url != crawler.current_url:
-          if "warning.or.kr" in crawler.current_url:
+          tmpToken = URL.tokenize(crawler.current_url)
+          if ["kr", "or", "warning"] == tmpToken[:3]:
             writerQ.put(url)
             continue
           
