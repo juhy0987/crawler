@@ -82,9 +82,10 @@ def manageProcess(logger, managers, commands, processMgr, urlQ, writerQ, config)
           logger.info(f"Current Running Children #: {len(processMgr.children)}")
           if avg > 0.8 or psutil.virtual_memory().free / psutil.virtual_memory().total < 0.02:
             if processMgr.maxProcess > config.MaxProcess // 2:
-              processMgr.killProcess(random.choice(list(processMgr.children.keys())))
+              id = random.choice(list(processMgr.children.keys()))
+              processMgr.killProcess(id)
               processMgr.maxProcess -= 1
-              logger.info(f"Decrease the Process #")
+              logger.info(f"Decrease the Process #, killed child {id}")
             else:
               break
           elif processMgr.maxProcess < config.MaxProcess and avg < 0.8 and psutil.virtual_memory().free / psutil.virtual_memory().total > 0.05:
@@ -104,11 +105,11 @@ def manageProcess(logger, managers, commands, processMgr, urlQ, writerQ, config)
         if processMgr.getLifeCnt(id) > 20:
           pid = processMgr.getProcess(id).pid
           if not processMgr.softKill[id]:
-            logger.info("exit signal to child {}".format(id))
+            logger.info(f"Heartbeat Count Over - Restart child {id}")
             os.kill(pid, signal.SIGINT)
             processMgr.softKill[id] = True
           else:
-            logger.info("kill child {}".format(id))
+            logger.info(f"Heartbeat Count Over - Forced Restart child {id}")
             
             procSig.killByPID(pid)
 
