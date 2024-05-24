@@ -144,6 +144,15 @@ def process (processId, chiefMgrConn, ping, managers, urlQ, writerQ):
             continue
           
           url = crawler.current_url
+          
+          if config.CheckRobot:
+            robots = Robots.RobotsJudgement(URL.getProtocolHost(url))
+            if not robots.isAble(url): # True: can crawl
+              logger.debug(f"Robot cannot access: {url}")
+              continue
+          
+          if not managers[2].lookup(url): # 0: matched
+            continue
           if managers[3].mutualCheck(url):
             continue
       except selenium.common.exceptions.TimeoutException as e:
