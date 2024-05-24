@@ -1,10 +1,8 @@
 import sys, os
 import time
-import subprocess
 import multiprocessing
-import signal
 import logging
-import psutil
+import socket
 from urllib.parse import urljoin
 
 import selenium
@@ -126,6 +124,8 @@ def process (processId, chiefMgrConn, ping, managers, urlQ, writerQ):
         managers[4].release(processId)
         continue
       
+      
+      
       cnt += 1
       if cnt % 20 == 0:
         logger.debug("Alive")
@@ -135,6 +135,12 @@ def process (processId, chiefMgrConn, ping, managers, urlQ, writerQ):
         wait = WebDriverWait(crawler, timeout=0.1)
       
       try:
+        try:
+          ip = socket.gethostbyname(URL.getHost(url))
+        except socket.gaierror:
+          logger.warning(f"DNS not found: {url}")
+          continue
+        
         crawler.implicitly_wait(config.PageLoadTimeoutLimit)
         crawler.get(url)
         
