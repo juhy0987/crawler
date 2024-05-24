@@ -52,6 +52,48 @@ def manageProcess(logger, managers, commands, processMgr, urlQ, writerQ, config)
           case _:
             pass
           
+      # Resource Check
+      try:
+        # cpu_usage = 0
+        memory_usage = 0
+        
+        allProcesses = psutil.process_iter(['pid', 'name', 'cmdline'])
+        for proc in allProcesses:
+          try:
+            if proc.info['cmdline'] and ('LinkBot.py' in proc.info['cmdline'] or 'chrome' in proc.info['name']):
+              p = psutil.Process(proc.info['pid'])
+              # cpu_usage += p.cpu_percent(interval=1.0)
+              memory_usage += p.memory_info().rss
+          except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+            pass
+        
+        if len(recentMemoryUsed) > 10:
+          recentMemoryUsed.remove(recentMemoryUsed[0])
+        recentMemoryUsed.append(memory_usage)
+        
+        if not resManageCnt:
+          avg = 0
+          for tmp in recentMemoryUsed:
+            avg += tmp
+          avg = avg / len(recentMemoryUsed) / psutil.virtual_memory().total
+          
+          logger.info(f"Memory Usage: {avg * 100:.2f} %")
+          logger.info(f"URL Queue Size: {urlQ.qsize()}")
+          logger.info(f"Current Running Children #: {len(processMgr.children)}")
+          if avg > 0.8 or psutil.virtual_memory().free / psutil.virtual_memory().total < 0.02:
+            if processMgr.maxProcess > config.MaxProcess // 2:
+              processMgr.killProcess(random.choice(list(processMgr.children.keys())))
+              processMgr.maxProcess -= 1
+              logger.info(f"Decrease the Process #")
+            else:
+              break
+          elif processMgr.maxProcess < config.MaxProcess and avg < 0.8 and psutil.virtual_memory().free / psutil.virtual_memory().total > 0.05:
+            processMgr.maxProcess += 1
+            logger.info(f"Increase the Process #")
+            
+      except (KeyError, OSError):
+        pass
+          
       # Dead Process Check
       deadlist = [] # check dead children + check heart beat from children
       for id in processMgr.children.keys():
@@ -80,7 +122,6 @@ def manageProcess(logger, managers, commands, processMgr, urlQ, writerQ, config)
         p.join()
         
         processMgr.delProcess(id)
-        processMgr.setUnusedNum(id)
         
         pid = managers[1].getPid(id)
         if pid < 0:
@@ -151,48 +192,6 @@ def manageProcess(logger, managers, commands, processMgr, urlQ, writerQ, config)
       # Add process
       if urlQ.qsize():
         processMgr.addProcess(modules.process.process, (managers, urlQ, writerQ))
-      
-      # Resource Check
-      try:
-        # cpu_usage = 0
-        memory_usage = 0
-        
-        allProcesses = psutil.process_iter(['pid', 'name', 'cmdline'])
-        for proc in allProcesses:
-          try:
-            if proc.info['cmdline'] and ('LinkBot.py' in proc.info['cmdline'] or 'chrome' in proc.info['name']):
-              p = psutil.Process(proc.info['pid'])
-              # cpu_usage += p.cpu_percent(interval=1.0)
-              memory_usage += p.memory_info().rss
-          except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
-            pass
-        
-        if len(recentMemoryUsed) > 10:
-          recentMemoryUsed.remove(recentMemoryUsed[0])
-        recentMemoryUsed.append(memory_usage)
-        
-        if not resManageCnt:
-          avg = 0
-          for tmp in recentMemoryUsed:
-            avg += tmp
-          avg = avg / len(recentMemoryUsed) / psutil.virtual_memory().total
-          
-          logger.info(f"Memory Usage: {avg * 100:.2f} %")
-          logger.info(f"URL Queue Size: {urlQ.qsize()}")
-          logger.info(f"Current Running Children #: {len(processMgr.children)}")
-          if avg > 0.8 or psutil.virtual_memory().free / psutil.virtual_memory().total < 0.02:
-            if processMgr.maxProcess > config.MaxProcess // 2:
-              processMgr.killProcess(random.choice(list(processMgr.children.keys())))
-              processMgr.maxProcess -= 1
-              logger.info(f"Decrease the Process #")
-            else:
-              break
-          elif processMgr.maxProcess < config.MaxProcess and avg < 0.8 and psutil.virtual_memory().free / psutil.virtual_memory().total > 0.05:
-            processMgr.maxProcess += 1
-            logger.info(f"Increase the Process #")
-            
-      except (KeyError, OSError):
-        pass
         
       # Rest
       if not len(processMgr.children):
