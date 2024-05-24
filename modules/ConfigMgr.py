@@ -19,13 +19,10 @@ class Config(object):
     self.PIDFilePath = ""
     self.URLSignFilePath = ""
     self.KeywordPath = ""
-    self.MsgLogFilePath = ""
-    self.MsgLogTmpFilePath = ""
     self.URLLogFilePath = ""
     self.BackupFilePath = ""
     
     self.LogLevel = 0
-    self.AvailRate = 0
     
     # Linkbot Work Settings
     self.ConfigLoadPeriod = 30 * 60 # seconds
@@ -35,11 +32,6 @@ class Config(object):
     self.qEmptyTimeoutLimit = 10.0 # seconds
     self.PageLoadTimeoutLimit = 1.5 # seconds
     self.LinkbotReworkPeriod = 10.0 # seconds
-    
-    # Start & End Settings
-    self.MaxLogCount = 0
-    self.StartTime = time.time()
-    self.EndTime = 0.0
     
     # RunMode
     # 0: default mode(Start URL From Config)
