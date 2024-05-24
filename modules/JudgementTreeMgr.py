@@ -28,9 +28,23 @@ class JudgementTree(object):
     self.queryDict = oracQry.treeDict
     self.treeDict.clear()
   
-  def lookup(self, sURL):
+  def lookupAll(self, sURL):
     for key in self.treeDict.keys():
       if not self.treeDict[key].lookupURL(sURL):
+        return 0
+    return -1
+  
+  def lookup(self, sURL, treeKeys):
+    if not treeKeys:
+      return -1
+    
+    for key in treeKeys:
+      try:
+        curTree = self.treeDict[key]
+      except KeyError:
+        continue
+      
+      if not curTree.lookupURL(sURL):
         return 0
     return -1
   
@@ -98,8 +112,8 @@ class JudgementTreeMgr(multiprocessing.managers.Namespace):
     self.updater = multiprocessing.Process(target=self.update, args=(cConn,), daemon=True)
     self.updater.start()
   
-  def lookup(self, sURL):
-    if self.judgementTree.lookup(sURL) < 0:
+  def lookupAll(self, sURL):
+    if self.judgementTree.lookupAll(sURL) < 0:
       return -1
     return 0
   

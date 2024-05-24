@@ -109,7 +109,7 @@ def process (processId, chiefMgrConn, ping, managers, urlQ, writerQ):
       except:
         pass
       
-      if not managers[2].lookup(url): # 0: matched
+      if not managers[2].lookup(url, ["filter_white_url"]): # 0: matched
         continue
         
       if config.CheckRobot:
@@ -151,7 +151,7 @@ def process (processId, chiefMgrConn, ping, managers, urlQ, writerQ):
               logger.debug(f"Robot cannot access: {url}")
               continue
           
-          if not managers[2].lookup(url): # 0: matched
+          if not managers[2].lookup(url, ["filter_white_url"]): # 0: matched
             continue
           if managers[3].mutualCheck(url):
             continue
@@ -256,7 +256,7 @@ def process (processId, chiefMgrConn, ping, managers, urlQ, writerQ):
       soup = BeautifulSoup(page, "html.parser")
       
       # Judge threaten Weight
-      if depth > 0 or config.CheckZeroDepth:
+      if (depth > 0 or config.CheckZeroDepth) and managers[2].lookupAll(url):
         weight = 0
         detectedList = []
         urlWeight, detectedURLKey = keyword.cal("url", url)
@@ -300,7 +300,7 @@ def process (processId, chiefMgrConn, ping, managers, urlQ, writerQ):
               else:
                 link = urljoin(sHost.strip(), link.strip())
               
-              if not managers[2].lookup(url): # 0: matched
+              if not managers[2].lookup(url, ["filter_white_url"]): # 0: matched 
                 continue
               
               if not managers[3].lookup(link):
