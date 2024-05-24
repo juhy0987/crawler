@@ -83,7 +83,7 @@ class Config(object):
     
     self.mainLogger.setLevel(logging.NOTSET)
     streamHandler = logging.StreamHandler()
-    self.formatter = logging.Formatter('[%(name)s:%(funcName)s-%(processName)s][%(levelname)s] %(asctime)s - %(message)s')
+    self.formatter = logging.Formatter('[%(name)s:%(funcName)s-%(processName)s][PID: %(process)d][%(levelname)s] %(asctime)s - %(message)s')
     streamHandler.setFormatter(self.formatter)
     self.mainLogger.addHandler(streamHandler)
 
