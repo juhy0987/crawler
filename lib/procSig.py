@@ -7,6 +7,7 @@ import psutil
 def killByPID(pid):
   try:
     p = psutil.Process(pid)
+    p.kill()
   except psutil.NoSuchProcess:
     pass
   
