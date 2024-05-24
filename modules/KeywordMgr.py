@@ -62,11 +62,13 @@ class Keyword(object):
       source = source.decode()
     
     weight = 0
+    detectedList = []
     for key, value in curDict.items():
       if key in source:
         weight += value
+        detectedList.append(key)
     
-    return weight
+    return weight, detectedList
 
   def lookup(self, key):
     result = []

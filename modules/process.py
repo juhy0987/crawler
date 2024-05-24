@@ -255,14 +255,20 @@ def process (processId, chiefMgrConn, ping, managers, urlQ, writerQ):
       page = crawler.page_source
       soup = BeautifulSoup(page, "html.parser")
       
+      # Judge threaten Weight
       if depth > 0 or config.CheckZeroDepth:
-        writerQ.put(url)
-        # weight = 0
-        # weight += keyword.cal("url", url)
-        # weight += keyword.cal("page", page)
-        # if weight >= config.KeyWeightLimit:
-        #   유해 사이트 목록에 추가
-        #   writerQ.put(url)
+        weight = 0
+        detectedList = []
+        urlWeight, detectedURLKey = keyword.cal("url", url)
+        pageWeight, detectedPageKey = keyword.cal("page", page)
+        weight += urlWeight + pageWeight
+        detectedList += detectedURLKey + detectedPageKey
+        if urlWeight >= config.KeyWeightLimit:
+          writerQ.put((url, "url", detectedURLKey))
+        elif pageWeight >= config.KeyWeightLimit:
+          writerQ.put((url, "page", detectedPageKey))
+        elif weight >= config.KeyWeightLimit:
+          writerQ.put(url, "total", detectedList)
       
       ping.send("l")
       ############### Next Link Crawling ##################
@@ -346,8 +352,6 @@ def writerProcess(id, chiefConn, configMgr, q):
   writer.setLevel(logging.INFO)
   writer.addHandler(logging.FileHandler(config.URLLogFilePath))
   
-  cnt = 0
-  tStart = time.time()
   try:
     while True:
       if chiefConn.poll(0):
@@ -371,12 +375,8 @@ def writerProcess(id, chiefConn, configMgr, q):
           sys.exit(0)
       
       while q.qsize():
-        writer.info(q.get())
-        cnt += 1
-      if cnt % 1000 == 0:
-        tEnd = time.time()
-        writer.debug("Elapsed time: {}\n".format(tEnd-tStart))
-        writer.debug("{}!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n\n\n\n\n\n".format(cnt))
+        url, detectedSrcType, detectedKeyword = q.get()
+        writer.info(f"{url} {detectedSrcType} {detectedKeyword}")
       time.sleep(1)
   except KeyboardInterrupt:
     sys.exit(0)
