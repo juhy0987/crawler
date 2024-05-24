@@ -33,6 +33,11 @@ class Config(object):
     self.PageLoadTimeoutLimit = 1.5 # seconds
     self.LinkbotReworkPeriod = 10.0 # seconds
     
+    # Resource Control
+    self.MaxLinkbotMem = 0.8
+    self.MinSysMem = 0.02
+    self.SafeSysMem = 0.05
+    
     # RunMode
     # 0: default mode(Start URL From Config)
     # 1: use black URL from database

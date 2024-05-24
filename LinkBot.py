@@ -80,7 +80,7 @@ def manageProcess(logger, managers, commands, processMgr, urlQ, writerQ, config)
           logger.info(f"Memory Usage: {avg * 100:.2f} %")
           logger.info(f"URL Queue Size: {urlQ.qsize()}")
           logger.info(f"Current Running Children #: {len(processMgr.children)}")
-          if avg > 0.8 or psutil.virtual_memory().free / psutil.virtual_memory().total < 0.02:
+          if avg > config.MaxLinkbotMem or psutil.virtual_memory().free / psutil.virtual_memory().total < config.MinSysMem:
             if processMgr.maxProcess > config.MaxProcess // 2:
               id = random.choice(list(processMgr.children.keys()))
               processMgr.killProcess(id)
@@ -88,7 +88,7 @@ def manageProcess(logger, managers, commands, processMgr, urlQ, writerQ, config)
               logger.info(f"Decrease the Process #, killed child {id}")
             else:
               break
-          elif processMgr.maxProcess < config.MaxProcess and avg < 0.8 and psutil.virtual_memory().free / psutil.virtual_memory().total > 0.05:
+          elif processMgr.maxProcess < config.MaxProcess and avg < config.MaxLinkbotMem and psutil.virtual_memory().free / psutil.virtual_memory().total > config.SafeSysMem:
             processMgr.maxProcess += 1
             logger.info(f"Increase the Process #")
             
