@@ -16,7 +16,6 @@ class ProcessMgr(object):
     self.usedFD = dict()
     self.lifeCnt = [ 0 ] * MAXPROCESS
     self.softKill = [ False ] * MAXPROCESS
-    self.psNum = [ False ] * MAXPROCESS
     self.maxProcess = maxProcess
     
     for i in range(MAXPROCESS):
@@ -85,8 +84,9 @@ class ProcessMgr(object):
       del(self.children[id])
     except KeyError:
       pass
-
-    self.psNum[id] = False
+    
+    self.initCnt(id)
+    self.softKill[id] = False
   
   def checkProcess(self, id):
     pipe = self.lifePipe[id][0]
@@ -99,7 +99,6 @@ class ProcessMgr(object):
           self.initCnt(id)
         elif data == "d":
           procSig.killByPID(self.getProcess(id).pid)
-          self.initCnt(id)
           return False
     except (BrokenPipeError, EOFError, OSError):
       pass
@@ -112,7 +111,7 @@ class ProcessMgr(object):
     import signal, time
     
     pid = self.getProcess(id).pid
-    pipe =  self.lifePipe[id][0]
+    pipe = self.lifePipe[id][0]
     try:
       os.kill(pid, signal.SIGINT)
     except ProcessLookupError:
@@ -152,15 +151,11 @@ class ProcessMgr(object):
       return self.lifeCnt[id]
     except KeyError:
       return None
-      
-  def setUnusedNum(self, id):
-    self.psNum[id] = False
   
   def getUnusedNum(self):
-    if False in self.psNum:
-      tmp = self.psNum.index(False)
-      self.psNum[tmp] = True
-      return tmp
+    for i in range(MAXPROCESS):
+      if not i in self.children.keys():
+        return i
     return -1
 
   def setMaxProcess(self, num):
