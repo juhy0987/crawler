@@ -25,8 +25,32 @@ class JudgementTree(object):
     self.config = None
   
   def init(self):
-    self.queryDict = oracQry.treeDict
-    self.treeDict.clear()
+    try:
+      with open("./lib/query/list.qry") as fd:
+        qryList = fd.read().split('\n')
+      flag = False
+      for line in qryList:
+        try:
+          if not line:
+            continue
+          if line[0] == "*" and line[1:] == "treeDict":
+            flag = True
+          
+          if not flag:
+            continue
+          
+          if line[0] == "*":
+            break
+          
+          query, treeType = line.split()
+          treeType = int(treeType)
+          self.queryDict[query] = treeType
+        except (ValueError, IndexError):
+          pass
+          
+      self.treeDict.clear()
+    except (FileNotFoundError, OSError, TypeError):
+      pass
   
   def lookupAll(self, sURL):
     for key in self.treeDict.keys():
