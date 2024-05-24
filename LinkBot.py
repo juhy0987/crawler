@@ -10,6 +10,7 @@ import logging
 import psutil
 import queue
 import random
+from tqdm import tqdm
 
 import modules
 from lib import CustomLogging, procSig
@@ -507,17 +508,25 @@ def exitProcessKill(managers):
   
 def exitQBackup(q, BackupFilePath):
   backupList = []
+  cnt = 0
   while q.qsize():
     backupList.append(q.get())
+    cnt += 1
   
   if backupList:
     dir = '/'.join(BackupFilePath.split('/')[:-1])
     if dir and not os.path.exists(dir):
       os.makedirs(dir)
     
+    print(f"Backup rest URL Q: {cnt}", file=sys.stderr)
     try:
       with open(BackupFilePath, "wb") as fd:
-        pickle.dump(backupList, fd)
+        pickler = pickle.Pickler(fd)
+        progressBar = tqdm(backupList, total=cnt, desc="Pickling")
+        for i, item in enumerate(progressBar):
+          pickler.dump(item)
+          if (i + 1) % 100000 or (i + 1) == cnt:
+            print(f"Backup Procgress: {i + 1}/{cnt}", file=sys.stderr)
     except (FileNotFoundError, TypeError, OSError):
       pass
 
