@@ -18,6 +18,8 @@ CONFIGPATH = "./config/linkbot.conf"
 ORACLEDB_CONFIGPATH = "./config/oracdb.conf"
 DUPLICATIONDB_CONFIGPATH = "./config/redisdb.conf"
 URLQDB_CONFIGPATH = "./config/urlq.conf"
+BASE_PATH = "./"
+APP_NAME = "linkbot"
 
 class MyManager(multiprocessing.managers.BaseManager):
   pass
@@ -46,9 +48,9 @@ def manageProcess(logger, managers, commands, processMgr, urlQ, writerQ, config)
   try:
     while cnt < 5:
       if commands.qsize(): # exit signal check
-        cmd = commands.get().split()
+        cmds = commands.get().split()
         
-        match cmd[0]:
+        match cmds[0]:
           case "x":
             break
           case _:
@@ -182,7 +184,7 @@ def manageProcess(logger, managers, commands, processMgr, urlQ, writerQ, config)
         managers[3].changeConfig(config)
         managers[4].changeConfig(config)
         managers[5].changeConfig(config)
-        urlQ.changeConfig()
+        urlQ.changeConfig(config)
         processMgr.setMaxProcess(config.MaxProcess)
       
       if managers[5].getUpdateFlag():
@@ -213,7 +215,7 @@ def manageProcess(logger, managers, commands, processMgr, urlQ, writerQ, config)
       processMgr.killProcess(id)
     crawlerKill(managers)
   
-  print("end manageProcess")
+  # print("end manageProcess")
   
   # Receive exit signal from main process
   try:
@@ -243,7 +245,7 @@ def getStartURL(managers, urlQ, config):
     case 3:
       startURL = runMode3(config)
     case _:
-      logger.error("Wrong Mode: {}".format(config.RunMode))
+      print("Wrong Mode: {}".format(config.RunMode), file=sys.stderr)
       sys.exit(1)
   
   if startURL:
@@ -424,10 +426,10 @@ def console(commands, managers, processMgr, urlQ, args):
   
   commands.put("x")
   
-  print("end console")
+  # print("end console")
 
 def initConfig(manager):
-  configMgr = manager.ConfigMgr(CONFIGPATH, os.getpid())
+  configMgr = manager.ConfigMgr(CONFIGPATH)
   return configMgr
 
 def initJudgementTree(manager, configMgr):
@@ -517,11 +519,12 @@ def exitQWrite(q, URLLogFilePath):
 
 # --------------- Emergency Handler End ---------------- #
 
-if __name__=="__main__":
-  # Linkbot Initiate
-  print("Linkbot Start")
+def main():
   logger = logging.getLogger('Linkbot')
   sys.stderr = CustomLogging.StreamToLogger(logger, logging.CRITICAL)
+  
+  # Linkbot Initiate
+  # print("Linkbot Start")
   
   # Shared Memory Manager Initiate
   manager = MyManager()
@@ -540,7 +543,6 @@ if __name__=="__main__":
   managers.append(initConfig(manager)) # [0]: config
   config = managers[0].getConfig()
   CustomLogging.setLogConfig(logger, config)
-  atexit.register(os.remove, config.PIDFilePath)
   
   # Process Killer Initiate
   managers.append(manager.CrawlerPIDMgr())
@@ -576,10 +578,29 @@ if __name__=="__main__":
     getStartURL(managers, urlQ, config)
   console(commands, managers, processMgr, urlQ, (logger, managers, commands, processMgr, urlQ, writerQ, config))
   
-  print("Linkbot Terminated")
+  # print("Linkbot Terminated")
   
   exitQWrite(writerQ, config.URLLogFilePath)
   exitProcessKill(managers)
   
   sys.stderr = CustomLogging.StreamToLogger(logger, logging.DEBUG)
   commands.put("f")
+
+def startUp():
+  try:
+    f = open('{}/{}.pid'.format(BASE_PATH,APP_NAME),'w')
+    pid = os.fork()
+    if pid > 0:
+      print('PID: '+str(pid))
+      f.write(str(pid))
+      f.close()
+      os._exit(0)
+  except BaseException as e:
+    print('Unable to fork. Error{[]}'.format(e))
+    os._exit(1)
+
+  main()
+
+if __name__=="__main__":
+  startUp()
+  

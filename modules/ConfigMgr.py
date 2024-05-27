@@ -15,10 +15,7 @@ class Config(object):
   sys.stderr = CustomLogging.StreamToLogger(managerLogger, logging.CRITICAL)
   
   def __init__ (self):
-    self.pid = -1
-    
     self.LogFilePath = ""
-    self.PIDFilePath = ""
     self.URLSignFilePath = ""
     self.KeywordPath = ""
     self.URLLogFilePath = ""
@@ -83,7 +80,6 @@ class Config(object):
     # Start URLs(RunMode 0)
     self.StartURL = []
     
-    self.pidFlag = False
     self.updateToken = False
     
     self.changeList = []
@@ -170,27 +166,6 @@ class Config(object):
             fileHandler = logging.FileHandler(value)
             fileHandler.setFormatter(self.formatter)
             self.mainLogger.addHandler(fileHandler)
-            
-        elif option == "PIDFilePath":
-          if self.pidFlag:
-            continue
-          
-          if os.path.isfile(value):
-            self.logger.error("Process is already working")
-            sys.exit(1)
-
-          dir = '/'.join(value.split('/')[:-1])
-          if dir and not os.path.exists(dir):
-            os.makedirs(dir)
-            
-          try:
-            with open(value, "w") as fd:
-              fd.write(str(self.pid)+'\n')
-          except (FileNotFoundError,TypeError,OSError):
-            self.logger.error("PID Path is wrong: {}".format(value))
-            sys.exit(1)
-          
-          self.pidFlag = True
           
         elif option == "LogLevel":
           if not CustomLogging.setLoggerLevel(self.mainLogger, value):
@@ -209,10 +184,6 @@ class Config(object):
     for k, v in self.__dict__.items():
       fd.write("{} {}\n".format(k, v))
     fd.close()
-    try:
-      os.remove(self.PIDFilePath)
-    except FileNotFoundError:
-      pass
   
   def getChildLogger(self, suffix):
     return self.mainLogger.getChild(suffix)
@@ -220,12 +191,11 @@ class Config(object):
   
 
 class ConfigMgr(multiprocessing.managers.Namespace):
-  def __init__(self, sFilePath, pid):
+  def __init__(self, sFilePath):
     super().__init__()
     self.config = Config()
     self.sFilePath = sFilePath
     
-    self.config.pid = pid
     try:
       self.config.load(sFilePath)
     except (FileNotFoundError,TypeError,OSError):

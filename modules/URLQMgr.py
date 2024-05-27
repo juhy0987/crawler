@@ -200,5 +200,6 @@ class URLQMgr(multiprocessing.managers.Namespace):
       return ("", self.config.MaxDepth+1)
   
   def changeConfig(self, config):
-    self.config = config
+    if config:
+      self.config = config
     
