@@ -25,33 +25,9 @@ class JudgementTree(object):
     self.config = None
   
   def init(self):
-    try:
-      with open("./lib/query/list.qry") as fd:
-        qryList = fd.read().split('\n')
-      flag = False
-      for line in qryList:
-        try:
-          if not line:
-            continue
-          if line[0] == "*" and line[1:] == "treeDict":
-            flag = True
-          
-          if not flag:
-            continue
-          
-          if line[0] == "*":
-            break
-          
-          query, treeType = line.split()
-          treeType = int(treeType)
-          self.queryDict[query] = treeType
-        except (ValueError, IndexError):
-          pass
-          
-      self.treeDict.clear()
-    except (FileNotFoundError, OSError, TypeError):
-      pass
-  
+    self.queryDict = oracQry.treeDict
+    self.treeDict.clear()
+
   def lookupAll(self, sURL):
     for key in self.treeDict.keys():
       if not self.treeDict[key].lookupURL(sURL):
@@ -141,17 +117,28 @@ class JudgementTreeMgr(multiprocessing.managers.Namespace):
       return -1
     return 0
   
+  def lookup(self, sURL, treeKeys):
+    return self.judgementTree.lookup(sURL, treeKeys)
+  
   def lookupDetail(self, sURL):
     return self.judgementTree.lookupDetail(sURL)
   
   def reviveUpdater(self):
     if not self.updater.is_alive():
+      try:
+        self.conn.close()
+      except:
+        pass
       self.conn, cConn = multiprocessing.Pipe()
       self.updater = multiprocessing.Process(target=self.autoUpdate, args=(cConn,), daemon=True)
       self.updater.start()
   
   def killUpdater(self):
     self.updaterKillFlag = True
+    try:
+      self.conn.send("kill")
+    except:
+      pass
   
   def autoUpdate(self, conn):
     sys.stderr = CustomLogging.StreamToLogger(self.judgementTree.logger, logging.CRITICAL)
@@ -175,6 +162,8 @@ class JudgementTreeMgr(multiprocessing.managers.Namespace):
                     self.judgementTree.logger.info("Configuration change applied")
                   case _:
                     pass
+              case "kill":
+                self.updaterKillFlag = True
               case  _:
                 pass
         except BrokenPipeError:
@@ -196,7 +185,10 @@ class JudgementTreeMgr(multiprocessing.managers.Namespace):
     return -1
   
   def changeConfig(self):
-    self.conn.send("config update")
+    try:
+      self.conn.send("config update")
+    except:
+      pass
 
 if __name__=="__main__":
   import os
