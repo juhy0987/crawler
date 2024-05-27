@@ -17,6 +17,7 @@ from lib import CustomLogging, procSig
 CONFIGPATH = "./config/linkbot.conf"
 ORACLEDB_CONFIGPATH = "./config/oracdb.conf"
 DUPLICATIONDB_CONFIGPATH = "./config/redisdb.conf"
+URLQDB_CONFIGPATH = "./config/urlq.conf"
 
 class MyManager(multiprocessing.managers.BaseManager):
   pass
@@ -27,6 +28,7 @@ MyManager.register("JudgementTreeMgr", modules.JudgementTreeMgr.JudgementTreeMgr
 MyManager.register("DuplicationDBMgr", modules.DuplicationDBMgr.DuplicationDBMgr)
 MyManager.register("HostSemaphoreMgr", modules.HostSemaphoreMgr.HostSemaphoreMgr)
 MyManager.register("KeywordMgr", modules.KeywordMgr.KeywordMgr)
+MyManager.register("URLQMgr", modules.URLQMgr.URLQMgr)
 MyManager.register("Queue", queue.Queue)
 
 def manageProcess(logger, managers, commands, processMgr, urlQ, writerQ, config):
@@ -180,6 +182,7 @@ def manageProcess(logger, managers, commands, processMgr, urlQ, writerQ, config)
         managers[3].changeConfig(config)
         managers[4].changeConfig(config)
         managers[5].changeConfig(config)
+        urlQ.changeConfig()
         processMgr.setMaxProcess(config.MaxProcess)
       
       if managers[5].getUpdateFlag():
@@ -232,46 +235,24 @@ def manageProcess(logger, managers, commands, processMgr, urlQ, writerQ, config)
   sys.exit(0)
 
 def getStartURL(managers, urlQ, config):
-  if os.path.isfile(config.BackupFilePath):
-    try:
-      with open(config.BackupFilePath+".dat", "rt") as fd:
-        total = int(fd.read())
-      
-      with open(config.BackupFilePath, "rb") as fd:
-        unpickler = pickle.Unpickler(fd)
-        cnt = 0
-        while True:
-          try:
-            item = unpickler.load()
-            urlQ.put(item)
-            if (cnt + 1) % 100000 == 0 or (cnt + 1) == total:
-              print(f"Backup Load Progress: {cnt + 1}/{total}", file=sys.stderr)
-            cnt += 1
-          except EOFError:
-            break
-      os.remove(config.BackupFilePath)
-      os.remove(config.BackupFilePath+".dat")
-    except (FileNotFoundError, TypeError, OSError, ValueError):
+  match config.RunMode:
+    case 0:
+      startURL = config.StartURL
+    case 1:
+      pass # FROM DB
+    case 3:
+      startURL = runMode3(config)
+    case _:
+      logger.error("Wrong Mode: {}".format(config.RunMode))
       sys.exit(1)
-  else:
-    match config.RunMode:
-      case 0:
-        startURL = config.StartURL
-      case 1:
-        pass # FROM DB
-      case 3:
-        startURL = runMode3(config)
-      case _:
-        logger.error("Wrong Mode: {}".format(config.RunMode))
-        sys.exit(1)
-    
-    if startURL:
-      for url in startURL:
-        sharp = url.find('#')
-        if sharp > -1:
-          url = url[:sharp]
-        urlQ.put((url, 0))
-    managers[3].clear()
+  
+  if startURL:
+    for url in startURL:
+      sharp = url.find('#')
+      if sharp > -1:
+        url = url[:sharp]
+      urlQ.put((url, 0))
+  managers[3].clear()
 
 def console(commands, managers, processMgr, urlQ, args):
   p = multiprocessing.Process(name="management", target=manageProcess, args=args)
@@ -491,10 +472,14 @@ def runMode3(config):
   return startURL
 
 def crawlerKill(managers):
-  pidDict = managers[1].getPidDict()
-  if pidDict:
-    for key, pid in pidDict.items():
-      procSig.killFamilyByPID(pid)
+  try:
+    pidDict = managers[1].getPidDict()
+    if pidDict:
+      for key, pid in pidDict.items():
+        procSig.killFamilyByPID(pid)
+  except BrokenPipeError:
+    pass
+  
   
   # 혹시 몰라서.. (kill all chrome & chromedriver process)
   if sys.platform == 'win32':
@@ -506,41 +491,17 @@ def crawlerKill(managers):
 # ----------------- Emergency Handler ---------------- #
 
 def exitProcessKill(managers):
+  crawlerKill(managers)
+  
   managers[0].killUpdater()
   managers[2].killUpdater()
   managers[3].killRecoverer()
   managers[4].killReleaser()
   managers[5].killUpdater()
-  
-  crawlerKill(managers)
+  managers[6].killUpdater()
   
   # p = subprocess.Popen(["taskkill", "/t", "/f", "/im", "chrome.exe"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
   # output, err = p.communicate()
-  
-def exitQBackup(q, BackupFilePath):
-  backupList = []
-  total = 0
-  while q.qsize():
-    backupList.append(q.get())
-    total += 1
-  
-  if backupList:
-    dir = '/'.join(BackupFilePath.split('/')[:-1])
-    if dir and not os.path.exists(dir):
-      os.makedirs(dir)
-    
-    print(f"Backup rest URL Q: {total}", file=sys.stderr)
-    try:
-      with open(BackupFilePath, "wb") as fd:
-        pickler = pickle.Pickler(fd)
-        for i, item in enumerate(backupList):
-          pickler.dump(item)
-          if (i + 1) % 100000 == 0 or (i + 1) == total:
-            print(f"Backup Progress: {i + 1}/{total}", file=sys.stderr)
-      with open(BackupFilePath+".dat", "wt") as fd:
-        print(total, file=fd)
-    except (FileNotFoundError, TypeError, OSError):
-      pass
 
 def exitQWrite(q, URLLogFilePath):
   dir = '/'.join(URLLogFilePath.split('/')[:-1])
@@ -594,29 +555,31 @@ if __name__=="__main__":
   managers.append(initDuplicationDB(manager, config)) # [3]: Duplicate
   
   # Semephore Initiate
-  managers.append(initHostSemephore(manager, config))
+  managers.append(initHostSemephore(manager, config)) # [4]: Semaphore
   
   # Keyword Initiate
-  managers.append(initKeyword(manager, config))
+  managers.append(initKeyword(manager, config)) # [5]: Keyword
   # managers[1].setPid("keywordMgr", managers[5].getUpdaterPID())
   
   # Data Queue Initiate
   writerQ = manager.Queue()
-  urlQ = manager.Queue()
+  urlQ = manager.URLQMgr(URLQDB_CONFIGPATH, managers[0]) # [6]: URL Queue
   commands = manager.Queue()
   
-  atexit.register(exitQBackup, urlQ, config.BackupFilePath)
+  managers.append(urlQ)
+  atexit.register(urlQ.exitQBackup)
   atexit.register(exitQWrite, writerQ, config.URLLogFilePath)
   
   # Process Start
   processMgr = modules.ProcessMgr.ProcessMgr(config.MaxProcess)
-  getStartURL(managers, urlQ, config)
+  if urlQ.empty():
+    getStartURL(managers, urlQ, config)
   console(commands, managers, processMgr, urlQ, (logger, managers, commands, processMgr, urlQ, writerQ, config))
   
   print("Linkbot Terminated")
   
   exitQWrite(writerQ, config.URLLogFilePath)
-  exitQBackup(urlQ, config.BackupFilePath)
   exitProcessKill(managers)
   
+  sys.stderr = CustomLogging.StreamToLogger(logger, logging.DEBUG)
   commands.put("f")

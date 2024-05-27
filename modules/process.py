@@ -94,6 +94,10 @@ def process (processId, chiefMgrConn, ping, managers, urlQ, writerQ):
         time.sleep(1)
         continue
       url, depth = urlQ.get()
+      if depth > config.MaxDepth:
+        qEmptyTimeoutCnt += 1
+        time.sleep(1)
+        continue
       qEmptyTimeoutCnt = 0
       
       try:
@@ -124,8 +128,6 @@ def process (processId, chiefMgrConn, ping, managers, urlQ, writerQ):
         managers[4].release(processId)
         continue
       
-      
-      
       cnt += 1
       if cnt % 20 == 0:
         logger.debug("Alive")
@@ -147,7 +149,7 @@ def process (processId, chiefMgrConn, ping, managers, urlQ, writerQ):
         if url != crawler.current_url:
           tmpToken = URL.tokenize(crawler.current_url)
           if ["kr", "or", "warning"] == tmpToken[:3]:
-            writerQ.put(url)
+            writerQ.put((url, "warn", []))
             continue
           
           url = crawler.current_url
@@ -316,9 +318,15 @@ def process (processId, chiefMgrConn, ping, managers, urlQ, writerQ):
               logger.warning(f"Wrong parse format: {link}")
               pass
   except (KeyboardInterrupt, BrokenPipeError):
-    managers[3].delete(url)
+    try:
+      managers[3].delete(url)
+    except (BrokenPipeError, EOFError):
+      pass
     logger.info("Received exit signal")
-    urlQ.put((url, depth+1))
+    try:
+      urlQ.put((url, depth+1))
+    except (BrokenPipeError, EOFError):
+      pass
     sys.exit(0)
   except Exception as e:
     logger.critical("Unhandled Error: {} {}".format(url, str(e)))
@@ -326,7 +334,10 @@ def process (processId, chiefMgrConn, ping, managers, urlQ, writerQ):
     urlQ.put((url, depth+1))
     raise e
   finally:
-    managers[4].release(processId)
+    try:
+      managers[4].release(processId)
+    except (BrokenPipeError, EOFError):
+      pass
     logger.debug("After release: {}".format(processId))
     try:
       pid = crawler.service.process.pid
