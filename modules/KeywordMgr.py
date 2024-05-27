@@ -107,7 +107,6 @@ class KeywordMgr(multiprocessing.managers.Namespace):
     self.updaterKillFlag = True
   
   def autoUpdate(self):
-    sys.stderr = CustomLogging.StreamToLogger(self.keyword.logger, logging.CRITICAL)
     while True:
       cnt = 0
       while cnt < self.keyword.config.KeywordLoadPeriod:

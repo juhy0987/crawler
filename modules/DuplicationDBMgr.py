@@ -201,7 +201,6 @@ class DuplicationDBMgr(multiprocessing.managers.Namespace):
     self.recoveryKillFlag = True
   
   def recovery(self):
-    sys.stderr = CustomLogging.StreamToLogger(self.db.logger, logging.CRITICAL)
     while True:
       cnt = 0
       while cnt < self.db.DBRecoveryPeriod: 

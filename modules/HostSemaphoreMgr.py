@@ -111,7 +111,6 @@ class HostSemaphoreMgr(multiprocessing.managers.Namespace):
     self.releaserKillFlag = True
   
   def deadlockCheck(self):
-    sys.stderr = CustomLogging.StreamToLogger(self.logger, logging.CRITICAL)
     while True:
       cnt = 0
       while cnt < self.config.RecoveryDeadlockPeriod: 

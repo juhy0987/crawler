@@ -11,6 +11,8 @@ from lib import CustomLogging
 class Config(object):
   mainLogger = logging.getLogger("Linkbot")
   logger = logging.getLogger("Linkbot.Config")
+  managerLogger = logging.getLogger("Linkbot.Managers")
+  sys.stderr = CustomLogging.StreamToLogger(managerLogger, logging.CRITICAL)
   
   def __init__ (self):
     self.pid = -1
@@ -230,7 +232,6 @@ class ConfigMgr(multiprocessing.managers.Namespace):
       self.config.logger.error("There's no Config File [{}]".format(sFilePath))
       sys.exit(1)
     
-    sys.stderr = open(self.config.LogFilePath, "at")
     self.lock = multiprocessing.RLock()
     
     self.updaterKillFlag = False
@@ -255,7 +256,6 @@ class ConfigMgr(multiprocessing.managers.Namespace):
     self.updaterKillFlag = True
   
   def autoUpdate(self):
-    sys.stderr = CustomLogging.StreamToLogger(self.config.logger, logging.CRITICAL)
     while True:
       cnt = 0
       while cnt < self.config.ConfigLoadPeriod:
@@ -269,7 +269,7 @@ class ConfigMgr(multiprocessing.managers.Namespace):
         try:
           self.config.load(self.sFilePath)
         except (FileNotFoundError,TypeError,OSError):
-          self.config.logger.error("There's no Config File [{}]".format(self.sFilePath), file=sys.stderr)
+          self.config.logger.error("There's no Config File [{}]".format(self.sFilePath))
         except Exception as e:
           raise e
         finally:
