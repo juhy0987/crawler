@@ -27,7 +27,7 @@ class Config(object):
     self.ConfigLoadPeriod = 30 * 60 # seconds
     self.KeywordLoadPeriod = 30 * 60 # seconds
     self.DBUpdatePeriod = 30 * 60 # seconds
-    self.RecoveryDeadlockPeriod = 20 # seconds
+    self.RecoveryDeadlockPeriod = 20.0 # seconds
     self.qEmptyTimeoutLimit = 10.0 # seconds
     self.PageLoadTimeoutLimit = 1.5 # seconds
     self.LinkbotReworkPeriod = 10.0 # seconds
@@ -217,7 +217,7 @@ class ConfigMgr(multiprocessing.managers.Namespace):
   
   def reviveUpdater(self):
     if not self.updater.is_alive():
-      self.updater = threading.Thread(target=self.recovery, daemon=True)
+      self.updater = threading.Thread(target=self.autoUpdate, daemon=True)
       self.updater.start()
       return True
     return False
