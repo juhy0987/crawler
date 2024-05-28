@@ -167,22 +167,22 @@ def process (processId, chiefMgrConn, ping, managers, urlQ, writerQ):
       except selenium.common.exceptions.TimeoutException as e:
         logger.debug("Timeout: {}".format(url))
         managers[3].delete(url)
-        urlQ.forcePut((url, depth*2))
+        urlQ.forcePut((url, depth*2+1))
         continue
       except selenium.common.exceptions.InvalidSessionIdException as e:
         logger.warning("Invalid session id: {}".format(url))
         managers[3].delete(url)
-        urlQ.forcePut((url, depth*2))
+        urlQ.forcePut((url, depth*2+1))
         continue
       except selenium.common.exceptions.StaleElementReferenceException:
         logger.debug("Not loaded element exists: {}".format(url))
         managers[3].delete(url)
-        urlQ.forcePut((url, depth*2))
+        urlQ.forcePut((url, depth*2+1))
         continue
       except ConnectionResetError:
         logger.debug("Connection Reset: {}".format(url))
         managers[3].delete(url)
-        urlQ.forcePut((url, depth*2))
+        urlQ.forcePut((url, depth*2+1))
         continue
       except (selenium.common.exceptions.UnexpectedAlertPresentException,
               selenium.common.exceptions.NoSuchElementException,
@@ -198,18 +198,18 @@ def process (processId, chiefMgrConn, ping, managers, urlQ, writerQ):
             "missing or invalid columnNumber" in str(e)):
           logger.warning("Timeout: {}".format(url))
           managers[3].delete(url)
-          urlQ.forcePut((url, depth*2))
+          urlQ.forcePut((url, depth*2+1))
           continue
         elif "no such execution context" in e.msg:
           logger.warning("Script Error: {}".format(url))
-          urlQ.forcePut((url, depth*2))
+          urlQ.forcePut((url, depth*2+1))
           continue
         elif ("net::ERR_CONNECTION_RESET" in e.msg or 
               "net::ERR_SSL_PROTOCOL_ERROR" in e.msg or
               "net::ERR_SSL_VERSION_OR_CIPHER_MISMATCH" in e.msg):
           logger.debug("SSL_ERROR: {}".format(url))
           managers[3].delete(url)
-          urlQ.forcePut((url, depth*2))
+          urlQ.forcePut((url, depth*2+1))
           continue
         elif ("net::ERR_INTERNET_DISCONNECTED" in e.msg or
               "net::ERR_CONNECTION_CLOSED" in e.msg or
@@ -230,14 +230,14 @@ def process (processId, chiefMgrConn, ping, managers, urlQ, writerQ):
         else:
           logger.critical("Unhandled Error: {} {}".format(url, str(e)))
           managers[3].delete(url)
-          urlQ.forcePut((url, depth*2))
+          urlQ.forcePut((url, depth*2+1))
           continue
       except KeyboardInterrupt:
         raise KeyboardInterrupt
       except Exception as e:
         logger.critical("Unhandled Error: {} {}".format(url, str(e)))
         managers[3].delete(url)
-        urlQ.forcePut((url, depth*2))
+        urlQ.forcePut((url, depth*2+1))
         continue
       finally:
         managers[4].release(processId)
@@ -324,14 +324,14 @@ def process (processId, chiefMgrConn, ping, managers, urlQ, writerQ):
       pass
     logger.info("Received exit signal")
     try:
-      urlQ.forcePut((url, depth*2))
+      urlQ.forcePut((url, depth*2+1))
     except (BrokenPipeError, EOFError):
       pass
     sys.exit(0)
   except Exception as e:
     logger.critical("Unhandled Error: {} {}".format(url, str(e)))
     managers[3].delete(url)
-    urlQ.forcePut((url, depth*2))
+    urlQ.forcePut((url, depth*2+1))
     raise e
   finally:
     try:
