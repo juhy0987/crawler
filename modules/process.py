@@ -95,8 +95,7 @@ def process (processId, chiefMgrConn, ping, managers, urlQ, writerQ):
         continue
       url, depth = urlQ.get()
       if depth > config.MaxDepth:
-        qEmptyTimeoutCnt += 1
-        time.sleep(1)
+        managers[3].mutualCheck(url)
         continue
       qEmptyTimeoutCnt = 0
       
