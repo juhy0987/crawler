@@ -120,12 +120,10 @@ class KeywordMgr(multiprocessing.managers.Namespace):
   
   def update(self):
     baseQuery = oracQry.keywordDict["base"]
-    tmpKeyword = Keyword()
-    tmpKeyword.config = self.keyword.config
     
-    if not tmpKeyword.load("page", baseQuery.format(self.keyword.config.KeyGID)):
+    if not self.keyword.load("page", baseQuery.format(self.keyword.config.KeyGID)):
       self.keyword.logger.info("Page Keyword loaded")
-    if not tmpKeyword.load("url", baseQuery.format(self.keyword.config.URLKeyGID)):
+    if not self.keyword.load("url", baseQuery.format(self.keyword.config.URLKeyGID)):
       self.keyword.logger.info("URL Keyword loaded")
     
     self.updateFlag = True
