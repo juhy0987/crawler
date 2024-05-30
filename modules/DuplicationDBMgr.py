@@ -213,7 +213,7 @@ class DuplicationDBMgr(multiprocessing.managers.Namespace):
         if not self.db.isRedisWork and self.lock.acquire(block=True, timeout=10):
           self.db.load(self.sFilePath)
         
-          while self.db.lru:
+          while self.db.isRedisWork and self.db.lru:
             self.db.updateRedis()
       except (FileNotFoundError,TypeError,OSError):
         self.db.logger.error("There's no DB Config File [{}]".format(self.sFilePath))
